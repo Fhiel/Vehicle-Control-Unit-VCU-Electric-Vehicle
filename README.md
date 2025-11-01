@@ -10,19 +10,19 @@ So I've started to interpret the signals and data formats of Battery Management 
 | Component | Features | Challenge  | 
 |------------|--------|-------------|
 | **Battery Management System (BMS)** | Battery Condition, HV contactors, charging process |Charge port LED, Type2 lock, battery pump control | 
-| **Motor Control Unit (MCU)**| Motor Management | MCU pump control| 
+| **Motor Control Unit (MCU)**| Motor Management | MCU pump control, understand BMS information | 
 | **Display Unit (DU)** | Instrument panel | RS485 instead of CANBus  |
 | **Insulation Monitoring Device (IMD)**  | Insulation measurement | Init selftest |
 ---
 ## Features
 - **CAN (TWAI)**: Filters & processes BMS, MCU, IMD messages (500 kbps)
+- **BMS proxy**: collect and transmit CAN ID to MCU in the required structure, 100 ms 
 - **RS485**: 14-byte telemetry to Display Unit @ 115200 baud, 200 ms
 - **Pumps**: PWM control (BAT: 5 kHz, INV: 1 kHz)
 - **Type 2 Lock**: Auto/manual lock/unlock with feedback
 - **IMD Self-Test**: HV relay check, BMS relay release on fail
 - **LED**: WS2812 status (Green=OK, Blue=Charging, Red=Error, Blink=Self-test fail)
 - **Safety**: Watchdog, mutexes, timeouts, plausibility checks
-
 ---
 
 ## Hardware

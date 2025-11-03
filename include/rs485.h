@@ -7,7 +7,7 @@
 #include "utils.h"
 
 #define PACKET_PAYLOAD_LENGTH 14
-#define PACKET_TOTAL_LENGTH   17   // 14 + Start + Len + CRC
+#define PACKET_TOTAL_LENGTH   17   // 14 + Start + End + CRC
 
 void packTelemetryData(uint8_t* payload_buffer);
 void send_rs485_telemetry();

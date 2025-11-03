@@ -105,7 +105,7 @@ void log_rs485_packet(const uint8_t* packet) {
     unsigned long currentMillis = millis();
     if (currentMillis - lastDebugPrint >= 10000) {
         char hex[64] = {0};
-        size_t len = min(PACKET_TOTAL_LENGTH, (size_t)32); // Cap to avoid buffer overflow
+        size_t len = min((size_t)PACKET_TOTAL_LENGTH, (size_t)32);// Cap to avoid buffer overflow
         for (size_t i = 0; i < len; i++) {
             snprintf(hex + strlen(hex), sizeof(hex) - strlen(hex), "%02X ", packet[i]);
         }

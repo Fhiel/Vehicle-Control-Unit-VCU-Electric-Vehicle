@@ -10,13 +10,15 @@
 #include <driver/gpio.h>
 #include <FastLED.h>
 #include <cstdint>
-#include <esp_err.h>  // ← für esp_err_t
+#include <esp_err.h> 
 
 #include "utils.h"
+#include "CAN_Transmit.h"
+#include "relay_control.h"
 
 using namespace std;
 
-// === KONSTANTEN ===
+// === CONSTANTS ===
 #define NUM_FILTERS 7
 #define MAX_IDS 50
 #define RS485_BAUDRATE 115200
@@ -32,7 +34,7 @@ extern const uint32_t FILTERED_IDS[NUM_FILTERS];
 extern const uint32_t FAST_IDS[];
 extern const uint32_t SLOW_IDS[];
 
-// === PLAUSIBILITÄT ===
+// === PLAUSIBILITY ===
 #define MOTOR_RPM_MAX       20000
 #define TEMP_MIN            -20.0f
 #define MCU_TEMP_MAX        85.0f
@@ -42,40 +44,65 @@ extern const uint32_t SLOW_IDS[];
 #define BMS_CURRENT_MAX     1000.0f
 #define IMD_ISO_R_MAX       50000
 
-// === TELEMETRY DATA ===
+/**
+ * @struct TelemetryData
+ * @brief Central storage for all vehicle and battery data.
+ * Optimized for Cross-Core access (volatile) and UI feedback.
+ */
 typedef struct {
-    uint16_t motorRPM; bool motorRPMValid;
-    int8_t motor_temp; bool motorTempValid;
-    int8_t mcu_temp; bool mcuTempValid;
-    uint16_t mcuFlags; bool mcuFlagsValid;
-    uint8_t mcuFaultLevel; bool mcuFaultLevelValid;
+    // --- MCU / Motor Data (ID 0x239) ---
+    volatile uint16_t motorRPM;
+    volatile int8_t motor_temp;
+    volatile int8_t mcu_temp;
+    volatile uint8_t mcuFaultLevel;
+    volatile uint32_t mcuFlags;
+    volatile bool motorRPMValid;
+    volatile bool motorTempValid;
+    volatile bool mcuTempValid;
+    volatile bool mcuFaultLevelValid;
 
-    uint8_t bmsSoC; bool bmsSoCValid;
-    int16_t bmsCurrent; bool bmsCurrentValid;
-    float bat_temp; bool batTempValid;
-    uint8_t bmsStatus; bool bmsStatusValid;
-    uint16_t bmsWarnings; bool bmsWarningsValid;
-    bool bmsLowVoltageWarn;
-    bool bmsHighTempWarn;
-    bool bmsLowTempWarn;
-    bool bmsHighCurrentWarn;
+    // --- BMS Core Data (ID 0x355, 0x356, 0x379) ---
+    volatile float bmsSoC;
+    volatile float bmsCurrent;
+    volatile float bat_temp;
+    volatile uint8_t bmsStatus;       // 0x04 = CHARGE (Plugged in)
+    volatile bool bmsSoCValid;
+    volatile bool bmsCurrentValid;
+    volatile bool batTempValid;
+    volatile bool bmsStatusValid;
+    volatile bool is_charging;        // Internal logic flag
+    
+    // --- BMS Alarms & Warnings (ID 0x35A) ---
+    volatile bool bmsHardwareFault;
+    volatile bool bmsLowVoltageWarn;
+    volatile bool bmsHighTempWarn;
+    volatile bool bmsLowTempWarn;
+    volatile bool bmsHighCurrentWarn;
 
-    uint16_t imdIsoR; bool imdIsoRValid;
-    uint16_t imdStatus; bool imdStatusValid;
-    uint16_t vifcStatus; bool vifcStatusValid;
-    uint16_t hv1Voltage; bool hv1VoltageValid;
-    uint8_t imdNegRelay; bool imdNegRelayValid;
-    uint8_t imdPosRelay; bool imdPosRelayValid;
-    bool imdRelayOpen; bool imdRelayOpenValid;
-    uint8_t selfTestResult; bool selfTestResultValid;
-    bool selfTestFailed;
+    // --- IMD / Insulation (ID 0x37, 0x22) ---
+    volatile uint16_t imdIsoR;
+    volatile uint16_t hv1Voltage;
+    volatile uint16_t imdStatus;
+    volatile uint16_t vifcStatus;
+    volatile uint8_t selfTestResult;
+    volatile bool selfTestResultValid;
+    volatile bool selfTestRunning;
+    volatile bool selfTestRequested;
+    volatile bool selfTestFailed;
+    volatile bool imdRelayOpen;
+    volatile bool imdIsoRValid;
+    volatile bool hv1VoltageValid;
+    volatile bool imdStatusValid;
+    volatile bool vifcStatusValid;
 
-    uint8_t actual_bms_status;
-    uint8_t proxy_bms_status;
-    bool imd_stop_flag;
-    bool isLocked, isUnLocking, isLocking, shouldLock;
-    bool selfTestRequested, selfTestRunning;
-    bool is_charging;
+    // --- VCU Internal State & Locking ---
+    volatile bool isLocked;           // Bolt is physically engaged
+    volatile bool isLocking;          // Motor is currently running (Lock)
+    volatile bool isUnLocking;        // Motor is currently running (Unlock)
+    volatile bool shouldLock;         // Request from Web UI
+    volatile uint8_t relayInputs;     // Physical Inputs (e.g. Ignition Kl.15)
+    volatile uint8_t bat_pump_pwm;    // Feedback for Dashboard
+    volatile uint8_t inv_pump_pwm;    // Feedback for Dashboard
 } TelemetryData;
 
 extern volatile TelemetryData telemetryData;
@@ -88,18 +115,16 @@ typedef struct {
     uint8_t data[8];
 } can_message_t;
 
-// === GLOBALE VARIABLEN ===
+// === GLOBAL VARIABLES ===
+extern bool demoModeActive;
 extern uint32_t received_ids[MAX_IDS];
 extern uint8_t received_ids_count;
 extern volatile unsigned long last_id_timestamps[NUM_FILTERS];
 extern volatile unsigned long last_receive_time, last_can_update;
 extern unsigned long last_send_time;
 
-extern bool selfTestRunning, selfTestRequested;
-extern uint8_t selfTestResult;
-
-extern bool isLocked, isLocking, isUnlocking, shouldLock;
-extern bool is_charging;
+extern bool manualUnlockPressed;
+extern bool selfTestFailed;
 
 extern QueueHandle_t canQueue;
 extern HardwareSerial RS485Serial;
@@ -115,9 +140,13 @@ extern twai_timing_config_t twai_timing_config;
 extern twai_filter_config_t twai_filter_config;
 
 // === PINS ===
+// --- LilyGo T-CAN485 Internal Hardware ---
 #define PIN_5V_EN                   GPIO_NUM_16
 #define CAN_SE_PIN                  GPIO_NUM_23
-#define LED_PIN                     GPIO_NUM_4
+#define RS485_EN_PIN                GPIO_NUM_17  // High = Enable RS485 Transceiver
+#define RS485_SE_PIN                GPIO_NUM_19  // High = RS485 Automatic Direction Control
+#define LED_PIN                     GPIO_NUM_4   // Onboard LED for status indication
+// --- external pins via Hut V2 ---
 #define TYPE2_LOCK_PIN              GPIO_NUM_25
 #define TYPE2_UNLOCK_PIN            GPIO_NUM_5
 #define TYPE2_MANUAL_UNLOCK_PIN     GPIO_NUM_12  
@@ -128,6 +157,15 @@ extern twai_filter_config_t twai_filter_config;
 #define INV_PUMP                    GPIO_NUM_33
 #define INV_PWM_CHANNEL             (ledc_channel_t)1
 #define INV_PWM_FREQ                1000         
+
+// Relay Mapping
+#define RELAY_CHECK_OIL    1  // Instrument Cluster "Check Oil"
+#define RELAY_BUZZER       2  // Alarm Buzzer
+#define RELAY_INV_FAN      3  // Inverter Fan
+#define RELAY_PUMPS_PWR    4  // Main Power for Pumps (Kl.15 Bypass)
+
+// Timing for Pump Afterrun (5 Minutes)
+#define PUMP_AFTERRUN_MS   300000
 
 // === LOCK TIMING ===
 #define LOCK_TIME_MS            2000
@@ -143,8 +181,16 @@ extern twai_filter_config_t twai_filter_config;
         } \
     } while(0)
 
-// === FUNKTIONEN ===
+// === FUNKTIONS ===
 void update_led();
 void handleLockState();
+void initWebServer();
+void updateWebDashboard();
+
+// --- Global state shared across modules ---
+extern volatile TelemetryData telemetryData;
+extern bool demoModeActive;
+extern bool manualUnlockPressed;
+extern CRGB leds[1]; // For FastLED
 
 #endif

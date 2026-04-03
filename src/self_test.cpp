@@ -1,237 +1,177 @@
-// self_test.cpp
+/**
+ * @file self_test.cpp
+ * @brief Active IMD Self-Test and HV-Relay coordination.
+ * @author Fhiel (X1/9e Project)
+ * @license MIT
+ */
+
 #define DEBUG
 #include "self_test.h"
 #include <esp_task_wdt.h>
-#include "main.h"  // für TelemetryData, dataMutex, etc.
+#include "main.h"
 
-// --- IMD command ---
-// Sende IMD-Anfrage mit korrektem DLC=5 und CMD-Format
-// Maßnahmen für Sicherheit und Robustheit:
-// - Eingabevalidierung: Überprüft CMD und Parameter
-// - CAN-Übertragung: Mit 100 ms Timeout
-// - Debugging: Begrenzt auf alle 5 Sekunden
+/**
+ * @brief Sends a formatted command to the IMD (Bender/Isometer style).
+ * CAN ID: 0x22, DLC: 5
+ */
 void send_imd_request(uint16_t cmd, uint8_t param) {
-    static unsigned long lastDebugPrint = 0;
-    unsigned long now = millis();
-
-    // --- 1. Eingabevalidierung ---
-    if (cmd != 0x0001 && cmd != 0x0005 && cmd != 0x0036 && 
-        cmd != 0x00D0 && cmd != 0x00D2 && cmd != 0x00DD) {
-        if (now - lastDebugPrint >= 5000) {
-            safe_printf("send_imd_request: Ungültiger Befehl 0x%04X\n", cmd);
-            lastDebugPrint = now;
-        }
-        return;
-    }
-    if (cmd == 0x00D0 && param > 1) {
-        if (now - lastDebugPrint >= 5000) {
-            safe_printf("send_imd_request: Ungültiger Selbsttest-Parameter %d\n", param);
-            lastDebugPrint = now;
-        }
-        return;
-    }
-
-    // --- 2. CAN-Nachricht ---
     twai_message_t message = {0};
     message.identifier = 0x22;
-    message.extd = 0;
     message.data_length_code = 5;
     message.data[0] = (uint8_t)(cmd >> 8);   // CMD High
     message.data[1] = (uint8_t)(cmd & 0xFF); // CMD Low
-    message.data[2] = param;                 // Parameter
-    message.data[3] = 0x00;                  // Padding
-    message.data[4] = 0x00;                  // Padding
-
-    // --- 3. Senden ---
-    esp_err_t err = twai_transmit(&message, pdMS_TO_TICKS(100));
-    if (err != ESP_OK && now - lastDebugPrint >= 5000) {
-        safe_printf("send_imd_request: twai_transmit fehlgeschlagen für CMD 0x%04X: %s\n",
-                    cmd, esp_err_to_name(err));
-        lastDebugPrint = now;
-    }
+    message.data[2] = param;
+    
+    twai_transmit(&message, pdMS_TO_TICKS(50));
 }
 
 void send_imd_self_test_start(bool full_test) {
     send_imd_request(0x00D0, full_test ? 1 : 0);
 }
 
+/**
+ * @brief Controls the IMD internal HV coupling relays.
+ */
 void set_imd_hv_relays(bool open) {
-    uint8_t state = open ? 0x00 : 0x01;
+    // CMD 0x00D2: 0 = NEG, 1 = POS
+    // param 0x01 = Close, 0x00 = Open
+    uint8_t state = open ? 0x00 : 0x01; 
+    
+    send_imd_request(0x00D2, 0); // NEG
+    vTaskDelay(pdMS_TO_TICKS(20));
+    send_imd_request(0x00D2, 1); // POS
+    
     WITH_DATA_MUTEX({ telemetryData.imdRelayOpen = open; });
-
-    send_imd_request(0x00D2, 0);  // NEG
-    vTaskDelay(pdMS_TO_TICKS(15));
-    send_imd_request(0x00D2, 1);  // POS
 }
 
-esp_err_t get_imd_hv_relays(uint8_t *neg_state, uint8_t *pos_state) {
-    // Hinweis: GET ist asynchron → wir senden nur Request
-    // Antwort kommt über 0x22 → wird in process_can_messages() geparst
-    send_imd_request(0x00DD, 0);  // NEG
-    vTaskDelay(pdMS_TO_TICKS(15));
-    send_imd_request(0x00DD, 1);  // POS
-    return ESP_OK;
-}
-
+/**
+ * @brief Global HV Release for the BMS (Master Interlock).
+ * ID 0x309: 0x01 = Enable, 0x00 = Inhibit
+ */
 void send_bms_relay_release(bool enable) {
-    static bool last_state = true;
-    if (enable == last_state) return;
-
+    static bool last_sent = false;
     twai_message_t msg = {0};
     msg.identifier = 0x309;
-    msg.extd = 0;
     msg.data_length_code = 1;
     msg.data[0] = enable ? 0x01 : 0x00;
 
-    if (twai_transmit(&msg, pdMS_TO_TICKS(100)) == ESP_OK) {
-        safe_printf("BMS %s (0x309)\n", enable ? "FREIGABE" : "SPERRE");
-        last_state = enable;
+    if (twai_transmit(&msg, pdMS_TO_TICKS(50)) == ESP_OK) {
+        last_sent = enable;
     }
 }
 
-
-// Selbsttest-Task: Verwaltet den IMD-Selbsttest
-// Maßnahmen für Sicherheit und Robustheit:
-// - Mutex-Schutz: dataMutex für selfTest-Variablen und globale Zustände
-// - Zustandsmaschine: Handhabt Relais-Öffnung, HV_1-Prüfung und Selbsttest
-// - Timeout: 5000 ms für Selbsttest, 100 ms für VIFC/HV_1-Responses
-// - Fehlerbehandlung: Reset bei Fehler oder Timeout, Benachrichtigung an BMS/RS485
-// - Debug: Begrenzt auf alle 5 Sekunden
-// - Watchdog: Task registriert und reset
+/**
+ * @brief Task: Manages the active IMD Self-Test sequence.
+ * This ensures HV isolation is verified before the car enters DRIVE or CHARGE.
+ */
 void self_test_task(void *parameter) {
     esp_task_wdt_add(NULL);
-    typedef enum {
-        SELF_TEST_IDLE,
-        SELF_TEST_OPEN_RELAYS,
-        SELF_TEST_CHECK_RELAYS,
-        SELF_TEST_CHECK_HV1,
-        SELF_TEST_RUNNING,
-        SELF_TEST_ERROR,
-        SELF_TEST_SUCCESS
-    } SelfTestState;
+    
+    enum SelfTestState {
+        IDLE,
+        OPENING_RELAYS,
+        CHECKING_VOLTAGE,
+        RUNNING_TEST,
+        EVALUATING,
+        CLEANUP_SUCCESS,
+        CLEANUP_FAULT
+    } state = IDLE;
 
-    SelfTestState state = SELF_TEST_IDLE;
-    unsigned long state_start_time = 0;
-    static unsigned long lastDebugPrint = 0;
-    static uint8_t error_count = 0;
-    const uint8_t MAX_ERROR_COUNT = 3;
+    unsigned long stateTimer = 0;
+    uint8_t retryCount = 0;
 
     while (1) {
         esp_task_wdt_reset();
-        unsigned long currentMillis = millis();
+        unsigned long now = millis();
 
-        bool test_requested = false;
-        bool is_charging_local = false;
-        uint16_t temp_hv1_voltage = 0;
-        uint8_t self_test_result = 0;
-        bool self_test_result_valid = false;
+        // Local copies of shared data
+        bool requested = false;
+        bool charging = false;
+        uint16_t hv1 = 0;
+        uint8_t result = 0;
+        bool resultValid = false;
 
-        if (dataMutexInitialized && xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            test_requested = telemetryData.selfTestRequested;
-            is_charging_local = telemetryData.is_charging;
-            temp_hv1_voltage = telemetryData.hv1VoltageValid ? telemetryData.hv1Voltage : 0;
-            self_test_result = telemetryData.selfTestResult;
-            self_test_result_valid = telemetryData.selfTestResultValid;
-
-            if (test_requested && !is_charging_local) {
-                telemetryData.selfTestRequested = false;
-                telemetryData.selfTestRunning = true;
-            }
+        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+            requested = telemetryData.selfTestRequested;
+            charging = telemetryData.is_charging;
+            hv1 = telemetryData.hv1Voltage;
+            result = telemetryData.selfTestResult;
+            resultValid = telemetryData.selfTestResultValid;
             xSemaphoreGive(dataMutex);
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
         }
 
         switch (state) {
-            case SELF_TEST_IDLE:
-                if (test_requested && !is_charging_local) {
-                    if (error_count >= MAX_ERROR_COUNT) {
-                        WITH_DATA_MUTEX({ telemetryData.selfTestRequested = false; telemetryData.selfTestRunning = false; });
-                        vTaskDelay(pdMS_TO_TICKS(1000));
-                        break;
-                    }
-                    state = SELF_TEST_OPEN_RELAYS;
-                    state_start_time = currentMillis;
-                    set_imd_hv_relays(true);
+            case IDLE:
+                if (requested && !charging) {
+                    state = OPENING_RELAYS;
+                    stateTimer = now;
+                    WITH_DATA_MUTEX({ 
+                        telemetryData.selfTestRequested = false;
+                        telemetryData.selfTestRunning = true; 
+                        telemetryData.selfTestFailed = false;
+                    });
+                    set_imd_hv_relays(true); // Open relays for safety check
+                    safe_printf("[IMD] Starting Active Self-Test...\n");
                 }
                 break;
 
-            case SELF_TEST_OPEN_RELAYS:
-                if (currentMillis - state_start_time >= 200) {
-                    state = SELF_TEST_CHECK_RELAYS;
-                    state_start_time = currentMillis;
+            case OPENING_RELAYS:
+                if (now - stateTimer >= 500) {
+                    state = CHECKING_VOLTAGE;
+                    stateTimer = now;
                 }
                 break;
 
-            case SELF_TEST_CHECK_RELAYS:
-                {
-                    uint8_t neg_state, pos_state;
-                    if (get_imd_hv_relays(&neg_state, &pos_state) == ESP_OK && neg_state == 0x00 && pos_state == 0x00) {
-                        state = SELF_TEST_CHECK_HV1;
-                        state_start_time = currentMillis;
-                        set_imd_hv_relays(true);
-                    } else {
-                        state = SELF_TEST_ERROR;
-                        error_count++;
-                    }
+            case CHECKING_VOLTAGE:
+                // Check if HV1 (Load side) is actually low (relays worked)
+                if (hv1 < 15) { // < 15V is considered safe/open
+                    state = RUNNING_TEST;
+                    stateTimer = now;
+                    send_imd_self_test_start(false); // Quick test
+                } else if (now - stateTimer > 2000) {
+                    safe_printf("[IMD] Error: HV1 voltage still detected! Relays stuck?\n");
+                    state = CLEANUP_FAULT;
                 }
                 break;
 
-            case SELF_TEST_CHECK_HV1:
-                if (currentMillis - state_start_time >= 300 && temp_hv1_voltage <= 10) {
-                    state = SELF_TEST_RUNNING;
-                    state_start_time = currentMillis;
-                    send_imd_self_test_start(false);
-                } else if (currentMillis - state_start_time >= 300) {
-                    state = SELF_TEST_ERROR;
-                    error_count++;
+            case RUNNING_TEST:
+                if (resultValid) {
+                    state = EVALUATING;
+                } else if (now - stateTimer > 8000) { // IMD Timeout
+                    safe_printf("[IMD] Error: Self-Test Timeout.\n");
+                    state = CLEANUP_FAULT;
                 }
                 break;
 
-            case SELF_TEST_RUNNING:
-                if (self_test_result_valid) {
-                    if (self_test_result == 0) {
-                        set_imd_hv_relays(false);
-                        state = SELF_TEST_SUCCESS;
-                    } else {
-                        set_imd_hv_relays(false);
-                        send_bms_relay_release(false);
-                        state = SELF_TEST_ERROR;
-                        error_count++;
-                    }
-                } else if (currentMillis - state_start_time >= 8000) {
-                    set_imd_hv_relays(false);
-                    send_bms_relay_release(false);
-                    state = SELF_TEST_ERROR;
-                    error_count++;
+            case EVALUATING:
+                if (result == 0) { // 0 = OK
+                    safe_printf("[IMD] Self-Test PASSED.\n");
+                    state = CLEANUP_SUCCESS;
+                } else {
+                    safe_printf("[IMD] Self-Test FAILED! Code: %d\n", result);
+                    state = CLEANUP_FAULT;
                 }
                 break;
 
-            case SELF_TEST_SUCCESS:
-                WITH_DATA_MUTEX({ telemetryData.selfTestRunning = false; telemetryData.selfTestFailed = false; });
-                state = SELF_TEST_IDLE;
-                error_count = 0;
+            case CLEANUP_SUCCESS:
+                set_imd_hv_relays(false); // Close relays for normal operation
+                send_bms_relay_release(true); // Allow High Voltage
+                WITH_DATA_MUTEX({ telemetryData.selfTestRunning = false; });
+                state = IDLE;
+                retryCount = 0;
                 break;
 
-            case SELF_TEST_ERROR:
+            case CLEANUP_FAULT:
                 set_imd_hv_relays(false);
-                send_bms_relay_release(false);
-                WITH_DATA_MUTEX({ telemetryData.selfTestRunning = false; telemetryData.selfTestRequested = false; telemetryData.selfTestFailed = true; });
-                state = SELF_TEST_IDLE;
-                break;
-
-            default:
-                state = SELF_TEST_IDLE;
-                error_count++;
+                send_bms_relay_release(false); // Inhibit High Voltage!
+                WITH_DATA_MUTEX({ 
+                    telemetryData.selfTestRunning = false; 
+                    telemetryData.selfTestFailed = true;
+                });
+                state = IDLE;
                 break;
         }
 
-        if (currentMillis - lastDebugPrint >= 5000) {
-            safe_printf("self_test_task: State=%d, Err=%u\n", state, error_count);
-            lastDebugPrint = currentMillis;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

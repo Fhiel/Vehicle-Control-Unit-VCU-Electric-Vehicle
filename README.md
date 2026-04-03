@@ -1,100 +1,45 @@
-# VCU_X19e
+VCU_X19e: Advanced Vehicle Control Unit
+An ESP32-based Vehicle Control Unit (VCU) designed for the electric conversion of a Bertone X1/9  to a Bertone X1/9e electric speed. It acts as the central nervous system, bridging high-voltage safety, thermal management, and modern user interaction.
 
-**ESP32-based Vehicle Control Unit (VCU)** for electric vehicles. Interfaces CAN (TWAI), RS485 telemetry, Type 2 lock, pumps, and IMD self-test. Modular, real-time, safety-focused.
-## Why _X19e? 
-The reason for this project was the conversion of my 1983 FIAT/BERTONE X1/9 to electric. **The birth of the X1/9e**.  
-Several components of my build are missing features or required functions. The CANBus was the only common link between all of them.
-So I've started to interpret the signals and data formats of Battery Management System (BMS), Motor Control Unit (MCU) and Insulation Monitoring Device (IMD) to be able to control several not supported elements.
+🏎️ The Project: X1/9e
+The X1/9e is more than a conversion; it's a modernization of a 1983 classic. This VCU was developed to solve the "missing links" between industrial EV components (Tesla, Hyper9, Bender) and custom vehicle requirements.
 
-## Electric Vehicle Components
-| Component | Features | Challenge  | 
-|------------|--------|-------------|
-| **Battery Management System (BMS)** | Battery Condition, HV contactors, charging process |Charge port LED, Type2 lock, battery pump control | 
-| **Motor Control Unit (MCU)**| Motor Management | MCU pump control, understand BMS information | 
-| **Display Unit (DU)** | Instrument panel | RS485 instead of CANBus  |
-| **Insulation Monitoring Device (IMD)**  | Insulation measurement | Init selftest |
----
-## Features
-- **CAN (TWAI)**: Filters & processes BMS, MCU, IMD messages (500 kbps)
-- **BMS proxy**: collect and transmit CAN ID to MCU in the required structure, 100 ms 
-- **RS485**: 14-byte telemetry to Display Unit @ 115200 baud, 200 ms
-- **Pumps**: PWM control (BAT: 5 kHz, INV: 1 kHz)
-- **Type 2 Lock**: Auto/manual lock/unlock with feedback
-- **IMD Self-Test**: HV relay check, BMS relay release on fail
-- **LED**: WS2812 status (Green=OK, Blue=Charging, Red=Error, Blink=Self-test fail)
-- **Safety**: Watchdog, mutexes, timeouts, plausibility checks
----
+🛠️ Key Components & Challenges
+ComponentFunctionVCU EnhancementBMSTesla-based Battery ManagementType 2 auto-locking, Thermal PWM, SoC ProxyingMCUNetGain Hyper9 Motor ControllerCAN Proxy (0x244), Safety Interlock, DeratingIMDBender Insulation MonitoringActive Self-Test Sequence, HV Relay LogicDashboardCustom RS485 Instrument ClusterHigh-speed telemetry bridge (115200 bps)
 
-## Hardware
-| Component | Pin |
-|---------|-----------|
-| TWAI TX/RX | GPIO 27/26 |
-| RS485 TX/RX/RE | GPIO 22/21/17 |
-| BAT Pump | GPIO 32 |
-| INV Pump | GPIO 33 |
-| Lock/Unlock | GPIO 25/5 |
-| Feedback/Manual | GPIO 18/12 |
-| LED | GPIO 4 |
-| 5V EN | GPIO 16 |
+🚀 Advanced Features
+Tesla-Style Dashboard: Real-time Web-UI via WebSocket. Responsive "Command Center" for Desktop and mobile "Cockpit View" for S10e integration.Safety-First Core: Multi-core RTOS implementation with Mutex protection and Watchdog supervision.Thermal Intelligence: Independent PWM control for Battery (5kHz) and Inverter (1kHz) pumps with 5-minute intelligent afterrun.Active Safety (IMD): Automated insulation self-test on startup/charge. Hardware interlock prevents HV-release on failure.Automotive Locking: Fully automated Type 2 connector management with physical feedback validation and theft protection.OTA Updates: Wireless firmware updates via ElegantOTA, enabling modifications from the driver's seat.mDNS Integration: Reachable via http://vcu-x19e.local – no IP searching required.
 
----
+📂 Project Structure
+Plaintextsrc/
+├── main.ino            # Initialization, RTOS Task scheduling
+├── main.h              # Centralized TelemetryData struct & Config
+├── can_process.cpp     # High-priority TWAI filtering & decoding
+├── lock_control.cpp    # Type 2 State Machine & Auto-Lock logic
+├── pump_control.cpp    # Thermal management & PWM ramping
+├── self_test.cpp       # Active IMD sequence & BMS Interlock
+├── web_server.cpp      # Async HTTP, WebSocket & OTA management
+├── web_ui.h            # Responsive Tesla-style Dashboard (HTML/CSS)
+├── rs485.cpp           # Optimized telemetry for Display Unit
+├── CAN_Transmit.cpp    # Outgoing Proxy & Charger control
+├── led_control.cpp     # Visual feedback (FastLED)
+└── utils.cpp           # Safety-printf & Math helpers
 
-## Requirements
-- **Board**: ESP32 (LilyGO T-485 recommended)
-- **Libraries**: [FastLED](https://github.com/FastLED/FastLED)
-- **Arduino IDE**: ESP32 core ≥2.0.14
+🔌 Hardware Configuration (LilyGO T-CAN485)
 
----
+FunctionGPIOLogicCAN TX/RX27 / 26TWAI 500kbpsRS485 TX/RX22 / 21Telemetry 115200bpsType 2 Lock/Unlock25 / 5H-Bridge ControlLock Feedback18Pull-UpManual Unlock12Physical InterruptPump PWM (INV/BAT)33 / 32Independent ChannelsStatus LED4WS2812B
 
-## Setup
+🚦 Status Indicators (WS2812B)
+    🟢 Solid Green: System Ready / Drive Mode.
+    🔵 Pulsing Blue: Charging (Daily Limit active).
+    🟡 Yellow: Initializing / Self-Test in progress.
+    🔴 Solid Red: Safety Warning (Unlocked during charge).
+    🚨 Strobe Red: CRITICAL ERROR (IMD Failure / Self-Test Fail).
 
-## Configuration
+💻 Build & Deployment
+This project is built using PlatformIO.
+Partitioning: Uses a custom partitions.csv (provided) to support dual OTA banks for safe wireless updates.
+Secrets: Rename secrets_example.h to secrets.h and enter your WiFi credentials.Upload:Bashpio run --target upload
 
-Edit **`main.h`** to customize:
-
-```cpp
-// Pins
-#define TYPE2_LOCK_PIN      GPIO_NUM_25
-#define TYPE2_UNLOCK_PIN    GPIO_NUM_5
-#define TYPE2_FEEDBACK_PIN  GPIO_NUM_18
-
-// Timing
-#define LOCK_TIME_MS        2000
-#define UNLOCK_TIME_MS      2000
-#define CAN_TIMEOUT_MS      1000
-
-// Debug
-#define DEBUG               // Remove for production
-```
-
-## LED States
-| Color | Meaning |
-|----------|----------------------------------------|
-| Green | BMS OK, ready |
-| Blue | Charging |
-| Red | CAN timeout / IMD fault | 
-| Yellow | IMD Self-test running / BMS warning |
-| Red Flash | Self-test FAILED (50 ms on / 1 s off) |
-
-## Project Structure
-
-```text
-VCU_X19e.ino →  setup(), loop(), tasks
-├── main.h               →  Global constants, structs, externs
-├── can_process.cpp      →  CAN receive, decode, timeouts
-├── lock_control.cpp     →  Type 2 lock state machine
-├── pump_control.cpp     →  PWM pump control (BAT/INV)
-├── rs485.cpp            →  14-byte telemetry to RP2040
-├── proxy_bms.cpp        →  CAN 0x244 proxy message
-├── self_test.cpp        →  IMD self-test & relay control
-├── led_control.cpp      →  WS2812 status + error blink
-└── utils.cpp            →  safe_printf, mapFloat
-```
-
-## Build & Flash
-Arduino IDE
-Board: ESP32 Dev Module
-Upload
-
-
-
+⚖️ License & SafetyThis software is provided under the MIT License.
+WARNING: This VCU controls high-voltage components. Use at your own risk. Always implement physical E-Stops and fused circuits.

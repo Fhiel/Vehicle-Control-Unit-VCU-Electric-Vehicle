@@ -5,19 +5,13 @@
 #include "main.h"
 
 void safe_printf(const char* format, ...) {
-#ifdef DEBUG
-    if (!serialMutexInitialized) return;
-
-    if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        va_list args;
-        va_start(args, format);
-        vprintf(format, args);
-        va_end(args);
-        xSemaphoreGive(serialMutex);
-    }
-#else
-    (void)format;  // vermeidet "unused parameter"
-#endif
+    // Mutex hier vorerst entfernen, um den Assert-Error zu stoppen
+    char loc_buf[128];
+    va_list arg;
+    va_start(arg, format);
+    vsnprintf(loc_buf, sizeof(loc_buf), format, arg);
+    va_end(arg);
+    Serial.print(loc_buf); 
 }
 
 // Calculates XOR checksum for RS485 packet

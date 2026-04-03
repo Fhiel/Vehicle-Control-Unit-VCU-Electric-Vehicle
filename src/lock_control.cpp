@@ -1,33 +1,29 @@
-// lock_control.cpp
+/**
+ * @file lock_control.cpp
+ * @brief Automotive-grade locking logic for Type 2 charging connector.
+ * @author Fhiel (X1/9e Project)
+ * @license MIT
+ * * Logic Overview:
+ * 1. Auto-Lock: As soon as BMS reports "CHARGE" status (Plug detected via PP), 
+ * the VCU automatically engages the mechanical lock.
+ * 2. Interlock: While locked or charging, the VCU signals 'Drive Inhibit' to the MCU.
+ * 3. Manual Unlock: Only possible via button if charging is not active/stopped.
+ */
+
 #define DEBUG
 #include "lock_control.h"
-#include "main.h"  // für TelemetryData, dataMutex, etc.
+#include "main.h"
 
-// --- Externe Abhängigkeiten ---
-extern SemaphoreHandle_t dataMutex;
-extern bool dataMutexInitialized;
-extern bool isLocked;
-extern bool isUnlocking;
-extern bool isLocking;
-extern bool shouldLock;
-extern bool is_charging;
-extern bool manualUnlockPressed;
-extern bool selfTestRunning;
-extern bool selfTestRequested;
-extern void safe_printf(const char *fmt, ...);
-
-// --- Globale Variablen (statisch in .cpp) ---
+/* --- Internal State Variables --- */
 static LockState state = LOCK_IDLE;
 static unsigned long actionStartTime = 0;
-static unsigned long lockFeedbackCheckTime = 0;
-static const unsigned long lock_time = LOCK_TIME_MS;
-static const unsigned long unlock_time = UNLOCK_TIME_MS;
-static uint8_t last_bms_status = 0x01;
-static unsigned long lastDebugPrint = 0;
+static unsigned long lastBmsStatus = 0x01;
 
-// --- Motor-Steuerung ---
-void setMotor(MotorState state) {
-    switch (state) {
+/**
+ * @brief Controls the H-Bridge for the Type 2 locking motor.
+ */
+void setMotor(MotorState motorState) {
+    switch (motorState) {
         case MOTOR_LOCK:
             digitalWrite(TYPE2_LOCK_PIN, HIGH);
             digitalWrite(TYPE2_UNLOCK_PIN, LOW);
@@ -37,144 +33,132 @@ void setMotor(MotorState state) {
             digitalWrite(TYPE2_UNLOCK_PIN, HIGH);
             break;
         case MOTOR_OFF:
+        default:
             digitalWrite(TYPE2_LOCK_PIN, LOW);
             digitalWrite(TYPE2_UNLOCK_PIN, LOW);
             break;
     }
 }
 
-// --- Manuelle Entriegelung (Taster) ---
+/**
+ * @brief Polls the physical manual unlock button (Active LOW).
+ */
 void updateManualUnlock() {
-    static bool lastState = false;
-    bool currentState = (digitalRead(TYPE2_MANUAL_UNLOCK_PIN) == LOW);  // Pull-up?
-    if (currentState && !lastState) {
+    static bool lastButtonState = false;
+    bool currentButtonState = (digitalRead(TYPE2_MANUAL_UNLOCK_PIN) == LOW);
+    
+    if (currentButtonState && !lastButtonState) {
         manualUnlockPressed = true;
     }
-    lastState = currentState;
+    lastButtonState = currentButtonState;
 }
 
-// --- Hauptfunktion: Zustandsmaschine ---
+/**
+ * @brief Main state machine for the charging connector lock.
+ * Orchestrates Auto-Lock on plug detection and safety-checked unlocking.
+ */
 void handleLockState() {
     updateManualUnlock();
-    unsigned long currentMillis = millis();
+    unsigned long now = millis();
 
-    // --- 1. Lese TelemetryData ---
-    bool mutex_taken = false;
-    uint8_t temp_bms_status = 0;
-    bool temp_is_charging = false;
-    uint16_t temp_vifcStatus = 0;
-    bool temp_manualUnlockPressed = false;
+    // 1. Thread-safe Data Acquisition
+    uint8_t currentBmsStatus = 0;
+    bool plugDetected = false;
+    bool unlockRequested = false;
+    uint16_t vifcStatus = 0;
 
-    if (dataMutexInitialized && xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        mutex_taken = true;
-        temp_bms_status = telemetryData.bmsStatusValid ? telemetryData.bmsStatus : 0;
-        temp_is_charging = is_charging;
-        temp_vifcStatus = telemetryData.vifcStatusValid ? telemetryData.vifcStatus : 0;
-        temp_manualUnlockPressed = manualUnlockPressed;
-    } else {
-        safe_printf("handleLockState: Timeout dataMutex\n");
-        return;
-    }
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        currentBmsStatus = telemetryData.bmsStatus;
+        // In your system, BMS "CHARGE" state (0x04) indicates plug is inserted (PP)
+        plugDetected = (currentBmsStatus == 0x04 || telemetryData.is_charging);
+        unlockRequested = manualUnlockPressed;
+        vifcStatus = telemetryData.vifcStatus;
+        xSemaphoreGive(dataMutex);
+    } else return;
 
-    // --- 2. BMS-Übergänge → Selbsttest prüfen ---
-    if (temp_bms_status != last_bms_status) {
-        if ((last_bms_status == 0x01 && temp_bms_status == 0x02) ||
-            (last_bms_status == 0x01 && temp_bms_status == 0x03) ||
-            (last_bms_status == 0x02 && temp_bms_status == 0x03)) {
-            bool selfTestOverall = (temp_vifcStatus & (1 << 12)) != 0;
-            bool selfTestParamConfig = (temp_vifcStatus & (1 << 13)) != 0;
-            if ((selfTestOverall || selfTestParamConfig) && !selfTestRunning && !selfTestRequested) {
-                WITH_DATA_MUTEX({
-                    selfTestRequested = true;
-                });
-                if (currentMillis - lastDebugPrint >= 5000) {
-                    safe_printf("handleLockState: Selbsttest angefordert\n");
-                    lastDebugPrint = currentMillis;
-                }
+    // 2. BMS Transition Watchdog (Trigger Self-Test on startup/charge)
+    if (currentBmsStatus != lastBmsStatus) {
+        if (currentBmsStatus == 0x02 || currentBmsStatus == 0x04) {
+            bool selfTestNeeded = (vifcStatus & (1 << 12)) || (vifcStatus & (1 << 13));
+            if (selfTestNeeded && !telemetryData.selfTestRunning) {
+                WITH_DATA_MUTEX({ telemetryData.selfTestRequested = true; });
+                safe_printf("[LOCK] BMS Change: Triggering IMD Self-Test.\n");
             }
         }
-        last_bms_status = temp_bms_status;
+        lastBmsStatus = currentBmsStatus;
     }
 
-    // --- 3. Zustandsmaschine ---
+    // 3. Locking State Machine
     switch (state) {
         case LOCK_IDLE:
-            if (shouldLock && !isLocked && !temp_is_charging) {
+            // AUTO-LOCK LOGIC: Plug inserted? -> Lock immediately
+            if (plugDetected && !telemetryData.isLocked) {
                 state = LOCK_LOCKING;
-                WITH_DATA_MUTEX({ isLocking = true; });
-                actionStartTime = currentMillis;
-                lockFeedbackCheckTime = currentMillis + 1000;
+                actionStartTime = now;
                 setMotor(MOTOR_LOCK);
-            } else if (temp_manualUnlockPressed && !temp_is_charging) {
+                WITH_DATA_MUTEX({ telemetryData.isLocking = true; });
+                safe_printf("[LOCK] Plug detected (PP). Engaging Auto-Lock.\n");
+            } 
+            // Manual Unlock (only if no plug is present or specifically requested)
+            else if (unlockRequested && !plugDetected) {
                 state = LOCK_UNLOCKING;
-                WITH_DATA_MUTEX({
-                    isUnlocking = true;
-                    isLocked = false;
-                    manualUnlockPressed = false;
-                });
-                actionStartTime = currentMillis;
+                actionStartTime = now;
                 setMotor(MOTOR_UNLOCK);
+                WITH_DATA_MUTEX({ 
+                    telemetryData.isUnLocking = true;
+                    manualUnlockPressed = false; 
+                });
             }
             break;
 
         case LOCK_LOCKING:
-            if (currentMillis - actionStartTime >= lock_time) {
-                if (currentMillis >= lockFeedbackCheckTime) {
-                    bool feedback = (digitalRead(TYPE2_FEEDBACK_PIN) == LOW);
-                    if (feedback) {
-                        state = LOCK_LOCKED;
-                        WITH_DATA_MUTEX({
-                            isLocking = false;
-                            isLocked = true;
-                        });
-                        setMotor(MOTOR_OFF);
-                    } else {
-                        safe_printf("handleLockState: Verriegelung fehlgeschlagen\n");
-                        state = LOCK_IDLE;
-                        WITH_DATA_MUTEX({
-                            isLocking = false;
-                            isLocked = false;
-                        });
-                        setMotor(MOTOR_OFF);
-                    }
-                }
-            }
-            break;
-
-        case LOCK_UNLOCKING:
-            if (currentMillis - actionStartTime >= unlock_time) {
-                state = LOCK_UNLOCKED;
-                WITH_DATA_MUTEX({ isUnlocking = false; });
+            if (now - actionStartTime >= LOCK_TIME_MS) {
+                // Verify physical feedback from the lock bolt
+                bool feedbackOk = (digitalRead(TYPE2_FEEDBACK_PIN) == LOW);
                 setMotor(MOTOR_OFF);
+                
+                state = feedbackOk ? LOCK_LOCKED : LOCK_IDLE;
+                WITH_DATA_MUTEX({ 
+                    telemetryData.isLocked = feedbackOk; 
+                    telemetryData.isLocking = false;
+                });
+
+                if (feedbackOk) safe_printf("[LOCK] Connector LOCKED & SECURED.\n");
+                else safe_printf("[LOCK] ERROR: Feedback failed. Bolt not engaged.\n");
             }
             break;
 
         case LOCK_LOCKED:
-            if (temp_manualUnlockPressed && !temp_is_charging) {
+            // The connector stays locked until the user explicitly pushes the button.
+            // Even if charging finishes, the cable remains theft-protected.
+            if (unlockRequested) {
+                // SAFETY: Charging must be stopped before unlocking (checked in CAN_Transmit)
                 state = LOCK_UNLOCKING;
-                WITH_DATA_MUTEX({
-                    isUnlocking = true;
-                    isLocked = false;
+                actionStartTime = now;
+                setMotor(MOTOR_UNLOCK);
+                WITH_DATA_MUTEX({ 
+                    telemetryData.isUnLocking = true;
+                    telemetryData.isLocked = false;
                     manualUnlockPressed = false;
                 });
-                actionStartTime = currentMillis;
-                setMotor(MOTOR_UNLOCK);
+                safe_printf("[LOCK] User requested UNLOCK. Stopping motor...\n");
+            }
+            break;
+
+        case LOCK_UNLOCKING:
+            if (now - actionStartTime >= UNLOCK_TIME_MS) {
+                state = LOCK_UNLOCKED;
+                setMotor(MOTOR_OFF);
+                WITH_DATA_MUTEX({ telemetryData.isUnLocking = false; });
+                safe_printf("[LOCK] Motor OFF. Connector is now RELEASED.\n");
             }
             break;
 
         case LOCK_UNLOCKED:
-            if (shouldLock && !temp_is_charging) {
-                state = LOCK_LOCKING;
-                WITH_DATA_MUTEX({ isLocking = true; });
-                actionStartTime = currentMillis;
-                lockFeedbackCheckTime = currentMillis + 1000;
-                setMotor(MOTOR_LOCK);
+            // Return to IDLE to allow new Auto-Lock cycles
+            if (!unlockRequested) {
+                state = LOCK_IDLE;
             }
             break;
-    }
-
-    // --- 4. Mutex freigeben ---
-    if (mutex_taken) {
-        xSemaphoreGive(dataMutex);
     }
 }

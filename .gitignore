@@ -3,10 +3,12 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-# PlatformIO Build/Cache Ordner
+# PlatformIO Build/Cache directory
 .pio/
-# PlatformIO legt manchmal Dateien im Root-Ordner ab
+# PlatformIO consign file (build cache)
 .sconsign.dblite
 # Weitere VSCode/DevContainer Caching
 .vscode/settings.json
 .vscode/*.log
+# Ignore private credentials
+src/secrets.h

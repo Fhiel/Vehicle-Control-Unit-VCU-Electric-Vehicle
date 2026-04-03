@@ -1,108 +1,93 @@
-// led_control.cpp
-#define DEBUG
+/**
+ * @file led_control.cpp
+ * @brief Physical LED feedback aligned with Tesla-style charging states.
+ * @author Fhiel (X1/9e Project)
+ * @license MIT
+ */
+
 #include "led_control.h"
 #include "main.h"
 
 void update_led() {
-    // --- 1. Daten mit Mutex lesen ---
     bool is_locked = false;
     bool is_unlocking = false;
     bool is_charging = false;
-    bool bms_status_ok = false;
+    bool bms_ready = false;
     bool self_test_failed = false;
     bool self_test_running = false;
+    float bms_soc = 0.0f;
 
+    // 1. Thread-safe data acquisition
     WITH_DATA_MUTEX({
         is_locked = telemetryData.isLocked;
         is_unlocking = telemetryData.isUnLocking;
         is_charging = telemetryData.is_charging;
-        bms_status_ok = telemetryData.bmsStatusValid && telemetryData.bmsStatus == 3;
+        bms_ready = (telemetryData.bmsStatusValid && telemetryData.bmsStatus == 3);
         self_test_failed = telemetryData.selfTestFailed;
         self_test_running = telemetryData.selfTestRunning;
+        bms_soc = telemetryData.bmsSoC;
     });
 
-    static CRGB current_color = CRGB::Black;
-    static unsigned long blink_start = 0;
-    static bool blink_on = false;
-    static bool last_self_test_failed = false;
-    CRGB target_color = CRGB::Black;
-
-    // --- 2. SELBSTTEST FEHLER: STARKER ROTER BLITZ (50ms AN / 150ms AUS) ---
+    unsigned long now = millis();
+    
+    // --- 2. CRITICAL ERROR: IMD FAILURE (Red Strobe) ---
     if (self_test_failed) {
-        unsigned long now = millis();
-        unsigned long cycle_time = now - blink_start;
-
-        // Neuer Fehler? → Blitz starten
-        if (!last_self_test_failed) {
-            blink_start = now;
-            blink_on = true;
-            FastLED.setBrightness(255);  // MAX HELLIGKEIT
-            leds[0] = CRGB::Red;
-            FastLED.show();
-            last_self_test_failed = true;
-            return;
-        }
-
-        // Blitz-Zyklus: 50ms AN → 150ms AUS
-        if (blink_on && cycle_time >= 50) {
-            blink_on = false;
-            blink_start = now;
-            leds[0] = CRGB::Black;
+        static unsigned long strobe_timer = 0;
+        static bool strobe_on = true;
+        // Fast flash to indicate high-voltage hazard
+        if (now - strobe_timer >= (strobe_on ? 50 : 800)) {
+            strobe_on = !strobe_on;
+            strobe_timer = now;
+            FastLED.setBrightness(255);
+            leds[0] = strobe_on ? CRGB::Red : CRGB::Black;
             FastLED.show();
         }
-        else if (!blink_on && cycle_time >= 1000) {
-            blink_on = true;
-            blink_start = now;
-            leds[0] = CRGB::Red;
-            FastLED.show();
-        }
-        return;  // Blitz hat höchste Priorität
-    }
-    else {
-        // Fehler vorbei → Reset + Helligkeit zurück
-        if (last_self_test_failed) {
-            FastLED.setBrightness(20);  // Normale Helligkeit
-            last_self_test_failed = false;
-            blink_on = false;
-        }
+        return; 
     }
 
-    // --- 3. NORMALE ZUSTÄNDE (nur wenn KEIN Fehler) ---
+    // --- 3. STATE MACHINE (Tesla-Style States) ---
     if (self_test_running) {
-        target_color = CRGB::Yellow;  // Selftest läuft
-    }
+        // Initializing / Checking isolation
+        leds[0] = CRGB::Yellow;
+        FastLED.setBrightness(128);
+    } 
     else if (is_unlocking || (!is_locked && is_charging)) {
-        target_color = CRGB::Red;     // Entriegeln oder Laden ohne Verriegelung
-    }
-    else if (bms_status_ok) {
-        target_color = is_charging ? CRGB::Blue : CRGB::Green;
-    }
+        // Red Solid: Charging without locking the Type 2 cable (Safety Warning)
+        leds[0] = CRGB::Red; 
+        FastLED.setBrightness(255);
+    } 
+    else if (is_charging) {
+        // Check if daily limit (80%) is reached
+        if (bms_soc >= 80.0f && dailyModeActive) {
+            // Tesla Style: Solid Blue (Waiting / Limit Reached)
+            leds[0] = CRGB::Blue;
+            FastLED.setBrightness(60);
+        } else {
+            // Tesla Style: Pulsing Green (Active Charging)
+            uint8_t pulse = beatsin8(15, 30, 255); 
+            FastLED.setBrightness(pulse);
+            leds[0] = CRGB::Green;
+        }
+    } 
+    else if (bms_ready) {
+        // Solid Green: Car is ready to drive / Fully charged
+        leds[0] = CRGB::Green;
+        FastLED.setBrightness(60);
+    } 
     else {
-        target_color = CRGB::Yellow;  // BMS nicht OK
+        // Default / Standby
+        leds[0] = CRGB::Yellow;
+        FastLED.setBrightness(40);
     }
 
-    // --- 4. Nur updaten, wenn sich Farbe ändert ---
-    if (target_color.r != current_color.r ||
-        target_color.g != current_color.g ||
-        target_color.b != current_color.b) {
-        current_color = target_color;
-        FastLED.setBrightness(20);  // Normale Helligkeit
-        leds[0] = current_color;
-        FastLED.show();
-    }
+    FastLED.show();
 
-    // --- 5. Debug alle 5 Sekunden ---
     #ifdef DEBUG
     static unsigned long last_print = 0;
-    if (millis() - last_print >= 5000) {
-        const char* state = self_test_failed ? "BLITZ ROT (Selbsttest Fehler!)" :
-                           self_test_running ? "Gelb (Selftest läuft)" :
-                           is_unlocking ? "Rot (Entriegeln)" :
-                           (!is_locked && is_charging) ? "Rot (Laden ohne Lock)" :
-                           is_charging ? "Blau (Laden)" :
-                           bms_status_ok ? "Grün (BMS OK)" : "Gelb (BMS nicht OK)";
-        safe_printf("LED: %s\n", state);
-        last_print = millis();
+    if (now - last_print >= 5000) {
+        safe_printf("[LED] State: %s | SoC: %.1f%%\n", 
+            self_test_failed ? "FAIL" : (is_charging ? "CHARGING" : "READY"), bms_soc);
+        last_print = now;
     }
     #endif
 }

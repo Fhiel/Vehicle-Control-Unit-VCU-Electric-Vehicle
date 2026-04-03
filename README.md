@@ -13,7 +13,7 @@ The X1/9e is more than a conversion; it's a modernization of a 1983 classic. Thi
 ## 🛠️ Key Components & Challenges
 |Component|Function|VCU Enhancement|
 |:--------|:------|:---|
-|BMS|Tesla-based Battery Management|Type 2 auto-locking, Thermal PWM, SoC Proxying|
+|BMS|Tesla-based Battery Management|Type 2 auto-locking, Thermal PWM, CAN Relay Control (ALARM, BUZZER, PUMPS, FAN)|
 |MCU| NetGain Hyper9 Motor Controller|CAN Proxy (0x244), Safety Interlock, Derating|
 |IMD|Bender Insulation Monitoring|Active Self-Test Sequence, HV Relay Logic|
 |Dashboard|Custom RS485 Instrument Cluster|High-speed telemetry bridge (115200 bps)|

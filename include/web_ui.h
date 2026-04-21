@@ -14,48 +14,95 @@ const char index_html[] PROGMEM = R"rawliteral(
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>X1/9e VCU Dashboard</title>
     <style>
-    /* --- DESIGN TOKENS --- */
+    /* --- IMPORTS --- */
+    /* 80ies Style */
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;800&display=swap');    /* --- DESIGN TOKENS --- */
     :root {
         --bg-color: #000000;
         --card-bg: #0d0d0d;
-        --tesla-blue: #008cff;
-        --tesla-green: #00ff41;
-        --tesla-red: #ff3b30;
-        --tesla-orange: #ff9500;
+        --bertone-gold: #d4af37;
+        --instrument-green: #00ff41; 
+        --warning-red: #ff1a1a; 
         --text-main: #ffffff;
-        --text-dim: #666;
         --border-ui: #1a1a1a;
+
+        --tesla-blue: var(--bertone-gold);
+        --tesla-green: var(--instrument-green);
+        --tesla-red: var(--warning-red);
     }
 
     body { 
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+        font-family: 'Montserrat', sans-serif; 
         background: var(--bg-color); color: var(--text-main); 
         margin: 0; padding: 0; display: flex; justify-content: center; min-height: 100vh;
-        overflow-x: hidden;
     }
 
     /* --- LAYOUT WRAPPER --- 
        Reduced gap from 15px to 10px and top-padding to 15px to fit 1020px height
     */
     .dashboard-wrapper {
-        display: flex; flex-direction: column; width: 100%; max-width: 1300px;
-        padding: 15px 20px 30px 20px; box-sizing: border-box; gap: 10px;
+        display: flex; 
+        flex-direction: column; 
+        width: 100%; 
+        max-width: 1300px;
+        /* Von 20px auf 5px seitlich reduziert */
+        padding: 15px 5px 30px 5px; 
+        box-sizing: border-box; 
+        gap: 10px;
     }
 
-    /* --- HEADER --- 
-       Slightly flatter header to save vertical space
-    */
+    /* --- HEADER BAR (Absolute Zentrierung für Portrait & Landscape) --- */
     .header-bar { 
-        display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; 
-        padding-bottom: 8px; border-bottom: 1px solid var(--border-ui);
+        display: flex; 
+        justify-content: space-between; /* Logo links, Range rechts */
+        align-items: center; 
+        padding-bottom: 8px; 
+        border-bottom: 1px solid var(--border-ui);
+        position: relative; /* WICHTIG: Bezugspunkt für die absolute Mitte */
+        height: 60px; /* Fixe Höhe für Stabilität */
     }
-    #status-tag { font-size: 0.75em; font-weight: bold; letter-spacing: 1.5px; color: var(--tesla-blue); text-align: left; }
-    .logo-area { display: flex; justify-content: center; }
-    .logo-img { height: 50px; width: auto; object-fit: contain; } /* Reduced from 60px to 50px */
-    
-    .range-box { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
-    .range-val { font-size: 3.2em; font-weight: 900; line-height: 0.8; } /* Slightly smaller */
-    .range-unit { font-size: 0.7em; color: var(--text-dim); text-transform: uppercase; }
+
+    /* Logo: Klebt jetzt maximal am linken Rand */
+    .logo-area { 
+        z-index: 2; 
+        display: flex;
+        margin: 0; 
+        padding: 0;
+    }
+    .logo-img { 
+        height: 50px; 
+        width: auto; 
+        display: block;
+        margin-left: 0;
+    }
+
+    /* BERTONE: Geometrische Mitte des Bildschirms, völlig unabhängig vom Rest */
+    #status-tag { 
+        position: absolute;
+        left: 50%;
+        top: 5px;
+        transform: translateX(-50%); 
+        font-size: 1.0em; 
+        font-weight: bold; 
+        letter-spacing: 2px; 
+        color: var(--bertone-gold); 
+        white-space: nowrap;
+        z-index: 1;
+        margin: 0;
+
+        text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    }
+
+    /* Range Box: Klebt maximal am rechten Rand */
+    .range-box { 
+        text-align: right; 
+        display: flex; 
+        flex-direction: column; 
+        align-items: flex-end; 
+        z-index: 2;
+    }
+    .range-val { font-size: 3.2em; font-weight: 900; line-height: 0.8; } 
+    .range-unit { font-size: 0.7em; color: var(--text-dim); text-transform: none; }
 
     /* --- CONTROLS & CARDS --- 
        Height reduced to 75px for better fit on 1020px displays
@@ -67,35 +114,173 @@ const char index_html[] PROGMEM = R"rawliteral(
         border: 1px solid #222; align-items: center;
     }
 
+    /* --- MODE GRID & CARDS --- */
+    .mode-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        width: 100%;
+        max-width: 500px; 
+        margin: 0 auto;
+    }
+
+    .mode-card {
+        background: var(--card-bg);
+        border: 2px solid var(--border-ui);
+        border-radius: 12px;
+        height: 70px; /* Kompakter */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: 0.3s;
+    }
+
+    /* The new class for the small text */
+    .mode-label { 
+        font-size: 0.55em; 
+        font-weight: 800; 
+        color: #222; 
+        text-transform: uppercase; 
+        letter-spacing: 0.8px;
+        margin-top: 4px;
+        transition: color 0.3s;
+    }
+
+    /* Status: Aktiv (Daily/Trip) */
+    .mode-active { border-color: #444 !important; }
+    .mode-active .icon-svg { fill: #ffffff !important; }
+    .mode-active .mode-label { color: #ffffff !important; }
+
+    /* Status: Inactiv */
+    .mode-card:not(.mode-active):not(.bolt-card) .icon-svg { fill: #222; }
+    .mode-card:not(.mode-active):not(.bolt-card) .mode-label { color: #222; }
+
+    /* Flashing Logic */
+    .bolt-card .icon-svg { fill: #444; transition: 0.3s; }
+
+    /* Aktiver Modus: Strahlend Weißes Icon, dunklerer Rand weg */
+    .mode-active {
+        border-color: #555 !important;
+    }
+    .mode-active .icon-svg {
+        fill: #ffffff !important;
+        filter: drop-shadow(0 0 5px rgba(255,255,255,0.3));
+    }
+    .mode-active .mode-label {
+        color: #ffffff !important;
+    }
+
+    /* Inaktiver Modus: Gedimmtes Grau */
+    .mode-card:not(.mode-active):not(.bolt-card) .icon-svg {
+        fill: #222; /* Sehr dezent, wie eine unbeleuchtete Anzeige */
+    }
+    .mode-card:not(.mode-active):not(.bolt-card) .mode-label {
+        color: #222;
+    }
+   
+    /* Flashing Animation for Bolt Icons */
+    .bolt-card { cursor: pointer; border-color: var(--border-ui); }
+    .bolt-card .icon-svg { fill: #444; } /* Standby Grau */
+
+    /* Flashing Animations */
+    .bolt-charging .icon-svg { fill: var(--tesla-green) !important; animation: bolt-pulse 2s infinite; }
+    .bolt-error .icon-svg { fill: var(--tesla-red) !important; animation: bolt-strobe 0.8s infinite; }
+    .bolt-limit .icon-svg { fill: var(--tesla-blue) !important; }
+
+    @keyframes bolt-pulse {
+        0% { opacity: 0.4; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.1); }
+        100% { opacity: 0.4; transform: scale(1); }
+    }
+
+    @keyframes bolt-strobe {
+        0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; }
+    }
+
     .mode-btn, .bolt-btn { font-size: 2em !important; line-height: 1; }
     .mode-btn { opacity: 0.2; transition: 0.3s; cursor: pointer; }
     .mode-active { opacity: 1 !important; transform: scale(1.1); }
     .bolt-btn { color: var(--tesla-blue); cursor: pointer; }
 
     .icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
     .icon-card { 
-        background: var(--card-bg); border: 2px solid var(--border-ui); 
-        border-radius: 18px; height: 75px; 
+        background: var(--card-bg); 
+        border: 2px solid var(--border-ui); 
+        border-radius: 10px; 
+        height: 70px; 
         display: flex; flex-direction: column; align-items: center; justify-content: center; 
-        transition: 0.3s; cursor: pointer;
+        transition: 0.2s; cursor: pointer;
+        padding: 0; box-sizing: border-box;
     }
-    .icon-label { font-size: 0.6em; font-weight: bold; color: var(--text-dim); text-transform: uppercase; margin-top: 3px; }
-    
-    .card-manual { border-style: dashed !important; border-color: var(--tesla-orange) !important; }
-    .card-on-red { border-color: var(--tesla-red) !important; color: var(--tesla-red); }
-    .card-on-green { border-color: var(--tesla-green) !important; color: var(--tesla-green); }
+
+    /* --- ICON CARDS (Classic Style) --- */
+    .icon-card { 
+        background: var(--card-bg); 
+        border: 2px solid var(--border-ui); 
+        border-radius: 12px; height: 75px; 
+        display: flex; flex-direction: column; align-items: center; justify-content: center; 
+        transition: background 0.3s, border-color 0.3s; cursor: pointer;
+    }
+
+    /* Symbols are always white */
+    .icon-svg { 
+        width: 40px;  
+        height: 40px; 
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        fill: #ffffff;
+    }
+
+    .icon-svg svg { width: 100%; height: 100%}
+
+    /* Active States: Background color changes */
+    .card-on-red { 
+        background: #ff1a1a !important; /* Bertone Rot */
+        border-color: #ffffff !important;
+    }
+
+    .card-on-green { 
+        background: #00ff41 !important; /* Cockpit Grün */
+        border-color: #ffffff !important;
+    }
+
+    /* When the card is active, we make the icon/text black for maximum contrast */
+    .card-on-red .icon-svg, .card-on-green .icon-svg { fill: #000000 !important; opacity: 1; }
+    .card-on-red .icon-label, .card-on-green .icon-label { color: #000000 !important; }
+
+    /* Manual Override Indicator */
+    .card-manual { border-style: dashed !important; border-width: 3px; }
 
     /* --- MAIN DIAGNOSTICS --- */
     .main-diag { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .diag-box { 
-        background: rgba(255,255,255,0.03); border: 1px solid var(--border-ui); 
-        padding: 10px 15px; border-radius: 15px; border-left: 4px solid #333;
-        display: flex; flex-direction: column;
+        background: rgba(255,255,255,0.03); 
+        border: 1px solid var(--instrument-green); /* Standardfarbe */
+        padding: 10px 12px; 
+        border-radius: 4px; 
+        display: flex; 
+        flex-direction: column;
+        justify-content: center;
+        transition: border-color 0.4s ease; /* Weicher Farbübergang bei Statuswechsel */
     }
-    .diag-label { font-size: 0.6em; color: var(--text-dim); text-transform: uppercase; text-align: left; }
-    .diag-val-container { text-align: right; width: 100%; }
-    .diag-val { font-size: 1.6em; font-weight: bold; color: #fff; }
-    .ok { border-left-color: var(--tesla-blue) !important; }
+
+    .diag-label { 
+        font-size: 0.55em; /* Etwas kleiner für den technischen Look */
+        color: var(--text-dim); 
+        text-transform: uppercase; 
+        text-align: left; 
+        letter-spacing: 1px;
+    }
+
+    .diag-val-container { 
+        text-align: right; 
+        width: 100%; 
+        margin-top: 2px;
+    }
 
     /* --- EXPERT GRID --- */
     .expert-grid { 
@@ -110,7 +295,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 
     .expert-box { background: var(--card-bg); border: 1px solid #222; padding: 15px; border-radius: 15px; }
     .expert-box h2 { 
-        font-size: 0.75em; color: var(--tesla-blue); text-transform: uppercase; 
+        font-size: 0.75em; color: var(expert-box h2); text-transform: uppercase; 
         margin: 0 0 10px 0; border-bottom: 1px solid #1a1a1a; padding-bottom: 6px; 
     }
     
@@ -127,7 +312,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         padding: 5px 10px; border-radius: 6px; font-size: 0.75em;
         font-weight: bold; cursor: pointer; transition: 0.2s;
     }
-    button:hover { background: #222; border-color: var(--tesla-blue); }
+    button:hover { background: #222; border-color: var(--instrument-green); }
 
     .fan-spin { display: inline-block; animation: spin 2.5s linear infinite; }
     @keyframes spin { 100% { transform: rotate(360deg); } }
@@ -156,10 +341,12 @@ const char index_html[] PROGMEM = R"rawliteral(
 <body>
     <div class="dashboard-wrapper">
         <div class="header-bar">
-            <div id="status-tag">VCU ONLINE</div>
             <div class="logo-area">
                 <img src=")rawliteral" LOGO_BASE64 R"rawliteral(" class="logo-img" alt="Logo">
             </div>
+
+            <div id="status-tag">BERTONE</div>
+
             <div class="range-box">
                 <span class="range-val" id="range">0</span>
                 <span class="range-unit">Range km</span>
@@ -167,18 +354,65 @@ const char index_html[] PROGMEM = R"rawliteral(
         </div>
 
         <div class="control-row">
-            <div class="mode-container">
-                <span id="mode-daily" class="mode-btn" onclick="send('MODE_DAILY')">🏠</span>
-                <span class="bolt-btn" onclick="if(confirm('Unlock & Stop Charging?')) send('CHARGE_STOP_REQ')">⚡</span>
-                <span id="mode-trip" class="mode-btn" onclick="send('MODE_TRIP')">🛣️</span>
+            <div class="mode-grid">
+                <div id="mode-trip" class="mode-card" onclick="send('MODE_TRIP')">
+                    <span class="icon-svg">
+                        <svg viewBox="0 0 24 24"><path d="M11,2V4.07C7.38,4.53 4.53,7.38 4.07,11H2V13H4.07C4.53,16.62 7.38,19.47 11,19.93V22H13V19.93C16.62,19.47 19.47,16.62 19.93,13H22V11H19.93C19.47,7.38 16.62,4.53 13,4.07V2H11M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6Z"/></svg>
+                    </span>
+                    <span class="mode-label">Trip</span>
+                </div>
+
+                <div class="mode-card bolt-card" onclick="if(confirm('Stop Charging?')) send('CHARGE_STOP_REQ')">
+                    <span class="icon-svg">
+                        <svg viewBox="0 0 24 24"><path d="M7,2V13H10V22L17,10H13L17,2H7Z"/></svg>
+                    </span>
+                    <span class="mode-label">Charge</span>
+                </div>
+
+                <div id="mode-daily" class="mode-card" onclick="send('MODE_DAILY')">
+                    <span class="icon-svg">
+                        <svg viewBox="0 0 24 24"><path d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/></svg>
+                    </span>
+                    <span class="mode-label">Daily</span>
+                </div>
             </div>
         </div>
 
         <div class="icon-grid">
-            <div class="icon-card" id="card-rel-1" onclick="send('REL1_AUTO')"><span class="icon-emoji">⚠️</span><span class="icon-label">Oil</span></div>
-            <div class="icon-card" id="card-rel-2" onclick="send('REL2_AUTO')"><span class="icon-emoji">🔔</span><span class="icon-label">Alarm</span></div>
-            <div class="icon-card" id="card-rel-3" onclick="send('REL3_AUTO')"><span class="icon-emoji" id="icon-fan">🌀</span><span class="icon-label">Inv Fan</span></div>
-            <div class="icon-card" id="card-rel-4" onclick="send('REL4_AUTO')"><span class="icon-emoji">💧</span><span class="icon-label">Pumps</span></div>
+            <div class="icon-card" id="card-rel-1" onclick="send('REL1_AUTO')">
+                <span class="icon-svg">
+                    <svg viewBox="0 0 32 32">
+                        <path d="M 11 9 L 11 11 L 13 11 L 13 13 L 7.5625 13 L 5.84375 10.4375 L 5.53125 10 L 1 10 L 1 15.6875 L 6 17.6875 L 6 25 L 20.53125 25 L 20.8125 24.5625 L 29.5 12 L 31 12 L 31 10 L 27.65625 10 L 27.40625 10.1875 L 21 15 L 21 13 L 15 13 L 15 11 L 17 11 L 17 9 Z M 3 12 L 4.4375 12 L 6 14.34375 L 6 15.5 L 3 14.3125 Z M 25.78125 13.9375 L 19.5 23 L 8 23 L 8 15 L 19 15 L 19 19 L 20.59375 17.8125 Z M 29.5 16 C 29.5 16 28 18.671875 28 19.5 C 28 20.328125 28.671875 21 29.5 21 C 30.328125 21 31 20.328125 31 19.5 C 31 18.671875 29.5 16 29.5 16 Z"/>
+                    </svg>
+                </span>
+
+            </div>
+            
+            <div class="icon-card" id="card-rel-2" onclick="send('REL2_AUTO')">
+                <span class="icon-svg">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12,2L1,21H23M12,6L19.53,19H4.47M11,10H13V14H11M11,16H13V18H11V16Z" />                    </svg>
+                </span>
+
+            </div>
+            
+            <div class="icon-card" id="card-rel-3" onclick="send('REL3_AUTO')">
+                <span class="icon-svg">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12,11a1,1,0,1,0,1,1,1,1,0,0,0-1-1m.5-9C17,2,17.1,5.57,14.73,6.75a3.36,3.36,0,0,0-1.62,2.47,3.17,3.17,0,0,1,1.23.91C18,8.13,22,8.92,22,12.5c0,4.5-3.58,4.6-4.75,2.23a3.44,3.44,0,0,0-2.5-1.62,3.24,3.24,0,0,1-.91,1.23c2,3.69,1.2,7.66-2.38,7.66C7,22,6.89,18.42,9.26,17.24a3.46,3.46,0,0,0,1.62-2.45,3,3,0,0,1-1.25-.92C5.94,15.85,2,15.07,2,11.5,2,7,5.54,6.89,6.72,9.26A3.39,3.39,0,0,0,9.2,10.87a2.91,2.91,0,0,1,.92-1.22C8.13,6,8.92,2,12.48,2Z"/> </g> 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10M12,6L14,9H10L12,6M18,12L15,14V10L18,12M12,18L10,15H14L12,18M6,12L9,10V14L6,12Z"/>
+                    </svg>
+                </span>
+   
+            </div>
+            
+            <div class="icon-card" id="card-rel-4" onclick="send('REL4_AUTO')">
+                <span class="icon-svg">
+                    <svg viewBox="0 0 1000 1000">
+                        <path d="M500 177q-115 0 -215 58q-96 56 -152 152q-58 100 -58 215t58 215q56 96 152 152q100 58 215 58t215 -58q96 -56 152 -152q58 -100 58 -215t-58 -215q-56 -96 -152 -152q-100 -58 -215 -58zM500 259q93 0 173 46q78 46 124 124q46 80 46 173t-46 173q-46 78 -124 124 q-80 46 -173 46q-36 0 -72 -7l389 -336l-388 -336q35 -7 71 -7zM333 302l361 302l-358 300q-82 -45 -130 -124q-49 -82 -49 -177.5t48 -176.5q48 -79 128 -124z"/>
+                    </svg>
+                </span>
+
+            </div>
         </div>
 
         <div class="main-diag">
@@ -272,71 +506,66 @@ const char index_html[] PROGMEM = R"rawliteral(
             document.getElementById('i-temp').innerText = check(d.mcu.it, d.mcu.itV);
             document.getElementById('iso').innerText    = check(d.imd.r,  d.imd.rV);
 
-            // --- 2. BOLT BUTTON (LED MIRROR) ---
-            const bolt = document.querySelector('.bolt-btn');
-            if (bolt) {
-                // Reset all logic-driven classes
-                bolt.classList.remove("bolt-charging", "bolt-error", "bolt-warning", "bolt-limit", "bolt-idle");
-                bolt.style.color = ""; // Clear manual orange if set
-                bolt.style.opacity = "";
-
-                if (d.vcu.err) {
-                    bolt.classList.add("bolt-error");    // Red Strobe (IMD Fail)
-                } 
-                else if (d.vcu.run) {
-                    bolt.style.color = "var(--tesla-orange)"; // Yellow (Self-test)
-                    bolt.style.opacity = "0.8";
-                }
-                else if (d.vcu.chg) {
-                    if (!d.vcu.locked || d.vcu.unl) {
-                        bolt.classList.add("bolt-warning"); // Solid Red (Unlocked Charging)
-                    } 
-                    else if (d.vcu.soc >= 80 && !d.vcu.trip) {
-                        bolt.classList.add("bolt-limit");   // Solid Blue (80% Reached)
-                    } 
-                    else {
-                        bolt.classList.add("bolt-charging"); // Pulsing Green
-                    }
-                } 
-                else {
-                    bolt.classList.add("bolt-idle"); // Default Gray (Not charging)
+            // --- 2. MODES (Daily/Trip) ---
+            const dailyBtn = document.getElementById('mode-daily');
+            const tripBtn  = document.getElementById('mode-trip');
+            if (dailyBtn && tripBtn) {
+                if (d.vcu.trip) {
+                    tripBtn.classList.add('mode-active');
+                    dailyBtn.classList.remove('mode-active');
+                } else {
+                    dailyBtn.classList.add('mode-active');
+                    tripBtn.classList.remove('mode-active');
                 }
             }
 
-            // --- 3. EXPERT VIEWS ---
-            // MCU
+            // --- 3. BOLT STATUS ---
+            const boltCard = document.querySelector('.bolt-card');
+            if (boltCard) {
+                boltCard.classList.remove("bolt-charging", "bolt-error", "bolt-limit");
+                if (d.vcu.err) boltCard.classList.add("bolt-error");
+                else if (d.vcu.chg) {
+                    if (d.vcu.soc >= 80 && !d.vcu.trip) boltCard.classList.add("bolt-limit");
+                    else boltCard.classList.add("bolt-charging");
+                }
+            }
+
+            // --- 4. RELAYS (Bertone Style) ---
+            for(let i=1; i<=4; i++) {
+                let card = document.getElementById('card-rel-' + i);
+                if(card) {
+                    let isMan = (d.vcu.mOv & (1 << (i-1)));
+                    let isOn  = (d.vcu.relO & (1 << (i-1)));
+                    let classes = ["icon-card"];
+                    if (isMan) classes.push("card-manual");
+                    if (isOn) classes.push(i <= 2 ? "card-on-red" : "card-on-green");
+                    card.className = classes.join(" ");
+                }
+            }
+
+            // Fan Animation
+            const fanIcon = document.getElementById('icon-fan'); // ID muss im HTML beim Fan-Relais stehen
+            if(fanIcon) {
+                if(d.vcu.relO & (1 << 2)) fanIcon.classList.add("fan-spin");
+                else fanIcon.classList.remove("fan-spin");
+            }
+
+            // --- 5. EXPERT VIEWS ---
             document.getElementById('mcu_rpm').innerText    = check(d.mcu.rpm, d.mcu.rpmV);
             document.getElementById('mcu_mT_exp').innerText = check(d.mcu.mt,  d.mcu.mtV);
             document.getElementById('mcu_cT').innerText     = check(d.mcu.it,  d.mcu.itV);
             document.getElementById('mcu_flt').innerText    = d.mcu.flt || 0;
 
-            // BMS
             document.getElementById('bms_soc').innerText = check(d.bms.soc, d.bms.socV);
             document.getElementById('bms_st').innerText  = d.bms.st || 0;
             const curEl = document.getElementById('bms_cur');
-            curEl.innerText = d.bms.aV ? d.bms.a.toFixed(1) : "n/a";
+            if(curEl) curEl.innerText = d.bms.aV ? d.bms.a.toFixed(1) : "n/a";
 
-            // IMD
             if(document.getElementById('imd_res')) document.getElementById('imd_res').innerText = check(d.imd.r, d.imd.rV);
             if(document.getElementById('imd_hv1')) document.getElementById('imd_hv1').innerText = check(d.imd.v, d.imd.vV);
             if(document.getElementById('imd_st_val')) document.getElementById('imd_st_val').innerText = d.imd.st || 0;
 
-            // --- 4. MODES & RELAYS ---
-            document.getElementById('mode-daily').className = d.vcu.trip ? "mode-btn" : "mode-btn mode-active";
-            document.getElementById('mode-trip').className = d.vcu.trip ? "mode-btn mode-active" : "mode-btn";
-
-            for(let i=1; i<=4; i++) {
-                let card = document.getElementById('card-rel-' + i);
-                if(card) {
-                    let isMan = (d.vcu.mOv & (1 << (i-1)));
-                    let isOn = (d.vcu.relO & (1 << (i-1)));
-                    card.className = "icon-card" + (isMan ? " card-manual" : "") + (isOn ? (i <= 2 ? " card-on-red" : " card-on-green") : "");
-                }
-            }
-            if(d.vcu.relO & (1 << 2)) document.getElementById('icon-fan').classList.add("fan-spin");
-            else document.getElementById('icon-fan').classList.remove("fan-spin");
-
-            // --- 5. SYSTEM & SAFETY ---
+            // --- 6. SYSTEM & SAFETY ---
             if (document.getElementById('bat-pump')) {
                 let batPct = Math.round(d.vcu.batP * 100 / 255);
                 document.getElementById('bat-pump').innerText = batPct;
@@ -354,30 +583,32 @@ const char index_html[] PROGMEM = R"rawliteral(
 
             const imdStatus = d.imd.st || 0; 
             const imdLabels = ["OFFLINE", "NORMAL", "FAULT", "TESTING"];
-            const imdEl = document.getElementById('d-imd');
-            if(imdEl) {
-                if (d.imd.rV) {
-                    imdEl.innerText = imdLabels[imdStatus] || "UNKNOWN";
-                    imdEl.style.color = (imdStatus === 2) ? "var(--tesla-red)" : (imdStatus === 3 ? "var(--tesla-orange)" : "white");
-                } else {
-                    imdEl.innerText = "OFFLINE";
-                    imdEl.style.color = "var(--text-dim)";
-                }
-            }
-            const imdBtn = document.getElementById('d-imd-btn');
-            if(imdBtn) imdBtn.disabled = (imdStatus === 3);
+            const isoBox = document.getElementById('box-iso');
+            if(isoBox) {
+                let boxColor = "var(--instrument-green)"; // Standard: Alles OK (ID 0)
 
-            // --- 6. PROXY BMS (HYPER9) ---
+                if (imdStatus === 1) { 
+                    boxColor = "var(--bertone-gold)"; // WARN (ID 1)
+                } 
+                else if (imdStatus === 2 || imdStatus === 5) { 
+                    boxColor = "var(--warning-red)";  // ERR oder ISO_ERROR (ID 2 & 5)
+                }
+                else if (imdStatus === 3 || imdStatus === 4) {
+                    boxColor = "var(--tesla-blue)";   // TEST oder CALIB (ID 3 & 4) - optional blau
+                }
+
+                isoBox.style.borderColor = boxColor;
+            }
+
+            // --- 7. PROXY BMS (HYPER9) ---
             if (d.proxy) {
-                document.getElementById('p-soc').innerText = d.proxy.soc || 0;
-                document.getElementById('p-lim').innerText = d.proxy.lim || 100;
-                
+                if(document.getElementById('p-soc')) document.getElementById('p-soc').innerText = d.proxy.soc || 0;
+                if(document.getElementById('p-lim')) document.getElementById('p-lim').innerText = d.proxy.lim || 100;
                 const inhEl = document.getElementById('p-inh');
                 if (inhEl) {
                     inhEl.innerText = d.proxy.inh ? "ACTIVE (STOP)" : "OFF (GO)";
                     inhEl.style.color = d.proxy.inh ? "var(--tesla-red)" : "var(--tesla-green)";
                 }
-
                 const fltEl = document.getElementById('p-flt');
                 if (fltEl) {
                     fltEl.innerText = d.proxy.flt ? "FAULT" : "OK";

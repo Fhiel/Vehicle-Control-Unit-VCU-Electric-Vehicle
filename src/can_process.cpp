@@ -135,9 +135,14 @@ void map_can_to_telemetry(const twai_message_t& msg) {
             }
             break;
             
-        case 0x301: // Relay Feedback
-            if (dlc >= 1) telemetryData.relayInputs = msg.data[0];
-            break;
+        case 0x01: // Relay Module Feedback (ID 0x01)
+        if (dlc >= 3) {
+            // data[0] Function Code (0x01 oder 0x02)
+            // data[1] Address Code (0x01)
+            // data[2] Status of  Relay 1-4
+            telemetryData.relayInputs = msg.data[2]; 
+        }
+        break;
     }
     xSemaphoreGive(dataMutex);
 }

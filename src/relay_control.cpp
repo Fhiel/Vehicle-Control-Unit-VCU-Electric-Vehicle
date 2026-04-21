@@ -23,11 +23,36 @@ static bool buzzerState = false;
  */
 void sendRelayCommand() {
     twai_message_t msg = {0};
-    msg.identifier = 0x101; 
-    msg.data_length_code = 1; // Only 1 byte needed for 8 relays
-    msg.data[0] = relayShadow; 
+    msg.identifier = 0x01;     
+    msg.extd = 0;              
+    msg.rtr = 0;               
+    msg.data_length_code = 8;  
 
-    twai_transmit(&msg, pdMS_TO_TICKS(10));
+    // Byte 0: Function Code (0x01 = Write DO)
+    msg.data[0] = 0x01; 
+    
+    // Byte 1: Address Code (0x01 = Factory Setting)
+    msg.data[1] = 0x01; 
+
+    // Byte 2: Relais 1-4
+    // Bit 0 = R1, Bit 1 = R2, Bit 2 = R3, Bit 3 = R4 ...
+    msg.data[2] = relayShadow; 
+
+    // Byte 3 bis 7: reserved / unused
+    msg.data[3] = 0x00;
+    msg.data[4] = 0x00;
+    msg.data[5] = 0x00;
+    msg.data[6] = 0x00;
+    msg.data[7] = 0x00;
+
+    // Transmit with 10ms Timeout
+    esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(10));
+    
+    #ifdef DEBUG
+    if (res != ESP_OK) {
+        printf("CAN Relay Transmit Error: 0x%X\n", res);
+    }
+    #endif
 }
 
 void setRelay(uint8_t channel, bool state) {
@@ -99,24 +124,27 @@ void updateRelayAutomation() {
         setRelay(3, (pInv > 191)); // Activate Fan > 75% Load
     }
 
-    // --- Relay 4: PUMP POWER & AFTERRUN ---
+    // --- Relay 4: PUMP POWER ---
     if (!(manualOverride & (1 << 3))) {
+        bool shouldBeOn = false;
         if (ignition || isCharging) {
-            setRelay(4, true);
+            shouldBeOn = true;
             afterrunStartTime = 0; 
         } else {
-            // Trigger Afterrun if pumps were working hard (>25%)
             if (afterrunStartTime == 0 && (pInv > 64 || pBat > 64)) {
                 afterrunStartTime = now;
-                safe_printf("[RELAY] Starting 5min Cooling Afterrun...\n");
             }
-
-            if (afterrunStartTime > 0 && (now - afterrunStartTime < PUMP_AFTERRUN_TIME)) {
-                setRelay(4, true);
-            } else {
-                setRelay(4, false);
-                afterrunStartTime = 0; 
+            if (afterrunStartTime > 0 && (now - afterrunStartTime < 300000)) { // 5min
+                shouldBeOn = true;
             }
         }
+        setRelay(4, shouldBeOn);
+    }
+
+    // FORCE UPDATE: Falls das Modul den Status "vergisst", senden wir regelmäßig
+    static unsigned long lastForceSend = 0;
+    if (now - lastForceSend > 500) { 
+        sendRelayCommand();
+        lastForceSend = now;
     }
 }

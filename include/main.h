@@ -19,7 +19,7 @@
 using namespace std;
 
 // === CONSTANTS ===
-#define NUM_FILTERS 7
+#define NUM_FILTERS 8
 #define MAX_IDS 50
 #define RS485_BAUDRATE 115200
 #define TWAI_BAUDRATE 500000

@@ -69,15 +69,21 @@ void update_led() {
             leds[0] = CRGB::Green;
         }
     } 
-    else if (bms_ready) {
-        // Solid Green: Car is ready to drive / Fully charged
-        leds[0] = CRGB::Green;
-        FastLED.setBrightness(60);
+    else if (is_locked) {
+        // Cable is locked but not charging
+        if (bms_ready) {
+            leds[0] = CRGB::Green;
+            FastLED.setBrightness(60);
+        } else {
+            leds[0] = CRGB::Yellow;
+            FastLED.setBrightness(40);
+        }
     } 
     else {
-        // Default / Standby
-        leds[0] = CRGB::Yellow;
-        FastLED.setBrightness(40);
+        // Cable removed (!is_locked)
+        // LED OFF to indicate "Ready to Drive" state (Cable unplugged)
+        leds[0] = CRGB::Black; 
+        FastLED.setBrightness(0);
     }
 
     FastLED.show();

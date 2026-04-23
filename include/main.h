@@ -139,30 +139,85 @@ extern twai_general_config_t g_config;
 extern twai_timing_config_t twai_timing_config;
 extern twai_filter_config_t twai_filter_config;
 
-// === PINS ===
-// --- LilyGo T-CAN485 Internal Hardware ---
-#define PIN_5V_EN                   GPIO_NUM_16
-#define CAN_SE_PIN                  GPIO_NUM_23
-#define RS485_EN_PIN                GPIO_NUM_17  // High = Enable RS485 Transceiver
-#define RS485_SE_PIN                GPIO_NUM_19  // High = RS485 Automatic Direction Control
-#define LED_PIN                     GPIO_NUM_4   // Onboard LED for status indication
-// --- external pins via Hut V2 ---
-#define TYPE2_LOCK_PIN              GPIO_NUM_25
-#define TYPE2_UNLOCK_PIN            GPIO_NUM_5
-#define TYPE2_MANUAL_UNLOCK_PIN     GPIO_NUM_12  
-#define TYPE2_FEEDBACK_PIN          GPIO_NUM_18
-#define BAT_PUMP                    GPIO_NUM_32
+#ifdef HARDWARE_T2CAN
+    // ====================== LilyGo T-2CAN Hardware Configuration ======================
+    // Internal ESP32-S3 TWAI (CAN B) - Isolated Transceiver
+    #define PIN_CAN_TX          GPIO_NUM_7   // Internal ESP32-S3 TWAI
+    #define PIN_CAN_RX          GPIO_NUM_6   // Internal ESP32-S3 TWAI
+
+    // SPI Interface for MCP2515 (second CAN bus - CAN A)
+    #define PIN_MCP_CS              GPIO_NUM_10   // SPI Chip Select
+    #define PIN_MCP_RST             GPIO_NUM_9    // MCP2515 Reset (active LOW pulse)
+    #define PIN_MCP_INT             GPIO_NUM_8    // MCP2515 Interrupt (optional)
+
+     // Power and Transceiver Control
+    #define PIN_5V_EN               GPIO_NUM_46   // Main 5V rail enable (powers transceivers, MCP2515, etc.)
+    #define PIN_CANB_STBY           GPIO_NUM_45   // Internal TWAI isolated transceiver enable/standby
+                                                  // LOW = Normal operation (most common on T-2CAN)
+
+    // ====================== External Pins via 26-Pin Header (Hut V3) ======================
+    // Type 2 Lock Control (DRV8871 H-Bridge)
+    #define TYPE2_LOCK_IN1          GPIO_NUM_18
+    #define TYPE2_LOCK_IN2          GPIO_NUM_21
+    #define TYPE2_FEEDBACK_PIN      GPIO_NUM_36   // Lock position feedback (input)
+    #define TYPE2_MANUAL_UNLOCK     GPIO_NUM_35   // Manual unlock button (input)
+
+    // Pump Control (Relay + PWM)
+    #define BAT_PUMP_RELAY          GPIO_NUM_37   // Battery pump power relay / MOSFET
+    #define BAT_PUMP_PWM            GPIO_NUM_38   // Battery pump speed control (PWM)
+    #define INV_PUMP_RELAY          GPIO_NUM_39   // Inverter pump power relay / MOSFET
+    #define INV_PUMP_PWM            GPIO_NUM_40   // Inverter pump speed control (PWM)
+
+    // Auxiliary Outputs
+    #define PIEZO_PIN               GPIO_NUM_5    // Buzzer
+    #define FAN_RELAY_PIN           GPIO_NUM_17   // Cooling fan relay
+    #define WS2812_DATA_PIN         GPIO_NUM_16   // Addressable RGB LED (status LED)
+
+    // Dashboard Indicator LEDs
+    #define LED_CHECK_OIL           GPIO_NUM_14
+    #define LED_BATTERY             GPIO_NUM_15
+
+    // General Purpose Relays
+    #define RELAY_1                 GPIO_NUM_42
+    #define RELAY_2                 GPIO_NUM_41
+    #define RELAY_3                 GPIO_NUM_47
+    #define RELAY_4                 GPIO_NUM_4
+
+    // General Purpose Input
+    #define INPUT_1                 GPIO_NUM_3    // Example: Ignition (Kl.15)
+
+    // ====================== Aliases for backward compatibility ======================
+    #define TYPE2_LOCK_PIN          TYPE2_LOCK_IN1
+    #define TYPE2_UNLOCK_PIN        TYPE2_LOCK_IN2
+    #define TYPE2_MANUAL_UNLOCK_PIN TYPE2_MANUAL_UNLOCK
+    #define LED_PIN                 WS2812_DATA_PIN   // External WS2812B FastLED 
+
+#elif defined(HARDWARE_TCAN485)
+    // --- Legacy T-CAN485 Hardware Configuration (Hut V2) ---
+    #define PIN_5V_EN           GPIO_NUM_16
+    #define CAN_SE_PIN          GPIO_NUM_23
+    #define PIN_CAN_TX          GPIO_NUM_27 
+    #define PIN_CAN_RX          GPIO_NUM_26
+    #define RS485_EN_PIN        GPIO_NUM_17
+    #define LED_PIN             GPIO_NUM_4 // Internal Addressable RGB LED
+    
+    #define TYPE2_LOCK_IN1      GPIO_NUM_25 
+    #define TYPE2_LOCK_IN2      GPIO_NUM_5  
+    #define TYPE2_FEEDBACK_PIN  GPIO_NUM_18
+    #define BAT_PUMP            GPIO_NUM_32
+    #define INV_PUMP            GPIO_NUM_33
+    // External Relays Mapping
+    #define RELAY_CHECK_OIL    1  // Instrument Cluster "Check Oil"
+    #define RELAY_BUZZER       2  // Alarm Buzzer
+    #define RELAY_INV_FAN      3  // Inverter Fan
+    #define RELAY_PUMPS_PWR    4  // Main Power for Pumps (Kl.15 Bypass)
+#endif
+
+// --- Global Constants (Hardware Independent) ---
 #define BAT_PWM_CHANNEL             (ledc_channel_t)0
 #define BAT_PWM_FREQ                5000         
-#define INV_PUMP                    GPIO_NUM_33
 #define INV_PWM_CHANNEL             (ledc_channel_t)1
 #define INV_PWM_FREQ                1000         
-
-// Relay Mapping
-#define RELAY_CHECK_OIL    1  // Instrument Cluster "Check Oil"
-#define RELAY_BUZZER       2  // Alarm Buzzer
-#define RELAY_INV_FAN      3  // Inverter Fan
-#define RELAY_PUMPS_PWR    4  // Main Power for Pumps (Kl.15 Bypass)
 
 // Timing for Pump Afterrun (5 Minutes)
 #define PUMP_AFTERRUN_MS   300000

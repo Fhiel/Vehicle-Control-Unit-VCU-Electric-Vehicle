@@ -25,17 +25,17 @@ static unsigned long lastBmsStatus = 0x01;
 void setMotor(MotorState motorState) {
     switch (motorState) {
         case MOTOR_LOCK:
-            digitalWrite(TYPE2_LOCK_PIN, HIGH);
-            digitalWrite(TYPE2_UNLOCK_PIN, LOW);
+            digitalWrite(TYPE2_LOCK_IN1, HIGH);
+            digitalWrite(TYPE2_LOCK_IN2, LOW);
             break;
         case MOTOR_UNLOCK:
-            digitalWrite(TYPE2_LOCK_PIN, LOW);
-            digitalWrite(TYPE2_UNLOCK_PIN, HIGH);
+            digitalWrite(TYPE2_LOCK_IN1, LOW);
+            digitalWrite(TYPE2_LOCK_IN2, HIGH);
             break;
         case MOTOR_OFF:
         default:
-            digitalWrite(TYPE2_LOCK_PIN, LOW);
-            digitalWrite(TYPE2_UNLOCK_PIN, LOW);
+            digitalWrite(TYPE2_LOCK_IN1, LOW);
+            digitalWrite(TYPE2_LOCK_IN2, LOW);
             break;
     }
 }

@@ -1,7 +1,7 @@
 //utils.cpp
 #define DEBUG
 #include "utils.h"
-#include "rs485.h"
+#include "telemetry.h"
 #include "main.h"
 
 void safe_printf(const char* format, ...) {
@@ -21,7 +21,7 @@ void safe_printf(const char* format, ...) {
 // - Debug: Limited to every 10 seconds for verification.
 uint8_t calculateChecksum(const uint8_t* data, size_t len) {
     // --- 1. Input validation ---
-    if (data == NULL || len == 0 || len > PACKET_PAYLOAD_LENGTH) {
+    if (data == NULL || len == 0 || len > TELEMETRY_PAYLOAD_LENGTH) {
         safe_printf("calculateChecksum: Invalid input (data=%p, len=%u)\n", data, len);
         return 0; // Safe default
     }
@@ -99,7 +99,7 @@ void log_rs485_packet(const uint8_t* packet) {
     unsigned long currentMillis = millis();
     if (currentMillis - lastDebugPrint >= 10000) {
         char hex[64] = {0};
-        size_t len = min((size_t)PACKET_TOTAL_LENGTH, (size_t)32);// Cap to avoid buffer overflow
+        size_t len = min((size_t)RS485_PACKET_TOTAL_LENGTH, (size_t)32);// Cap to avoid buffer overflow
         for (size_t i = 0; i < len; i++) {
             snprintf(hex + strlen(hex), sizeof(hex) - strlen(hex), "%02X ", packet[i]);
         }

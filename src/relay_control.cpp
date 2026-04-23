@@ -1,13 +1,16 @@
 /**
  * @file relay_control.cpp
- * @brief Logic for the 4-channel VCU Relay Module (ID 0x101).
+ * @brief Logic for Relay Management (Supports CAN-Remote and Onboard GPIOs).
  * @author Fhiel (X1/9e Project)
  * @license MIT
  */
 
 #include "relay_control.h"
 #include "main.h"
+
+#ifdef HARDWARE_TCAN485
 #include <driver/twai.h>
+#endif
 
 /* --- Global State --- */
 uint8_t relayShadow = 0x00;     // Current relay bitmask
@@ -19,41 +22,38 @@ static unsigned long lastBuzzerToggle = 0;
 static bool buzzerState = false;
 
 /**
- * @brief Sends the relayShadow to the Remo-Module via CAN (ID 0x101).
+ * @brief Updates relay states based on the hardware platform.
  */
 void sendRelayCommand() {
+#ifdef HARDWARE_TCAN485
+    // Legacy: Send relayShadow to the Remote-Module via CAN (ID 0x01)
     twai_message_t msg = {0};
     msg.identifier = 0x01;     
-    msg.extd = 0;              
-    msg.rtr = 0;               
     msg.data_length_code = 8;  
-
-    // Byte 0: Function Code (0x01 = Write DO)
-    msg.data[0] = 0x01; 
-    
-    // Byte 1: Address Code (0x01 = Factory Setting)
-    msg.data[1] = 0x01; 
-
-    // Byte 2: Relais 1-4
-    // Bit 0 = R1, Bit 1 = R2, Bit 2 = R3, Bit 3 = R4 ...
+    msg.data[0] = 0x01; // Function Code: Write DO
+    msg.data[1] = 0x01; // Address
     msg.data[2] = relayShadow; 
+    twai_transmit(&msg, pdMS_TO_TICKS(10));
+#endif
 
-    // Byte 3 bis 7: reserved / unused
-    msg.data[3] = 0x00;
-    msg.data[4] = 0x00;
-    msg.data[5] = 0x00;
-    msg.data[6] = 0x00;
-    msg.data[7] = 0x00;
-
-    // Transmit with 10ms Timeout
-    esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(10));
+#ifdef HARDWARE_T2CAN
+    // New: Directly control onboard MOSFETs/Relays via GPIO
+    digitalWrite(RELAY_1, (relayShadow & (1 << 0)));
+    digitalWrite(RELAY_2, (relayShadow & (1 << 1)));
+    digitalWrite(RELAY_3, (relayShadow & (1 << 2)));
+    digitalWrite(RELAY_4, (relayShadow & (1 << 3)));
     
-    #ifdef DEBUG
-    if (res != ESP_OK) {
-        printf("CAN Relay Transmit Error: 0x%X\n", res);
-    }
-    #endif
+    // Additional T-2CAN onboard features
+    digitalWrite(FAN_RELAY_PIN,   (relayShadow & (1 << 2))); // R3 is also the Fan
+    digitalWrite(BAT_PUMP_RELAY,  (relayShadow & (1 << 3))); // R4 enables Pumps
+    digitalWrite(INV_PUMP_RELAY,  (relayShadow & (1 << 3))); // R4 enables Pumps
+    
+    // Improved Piezo Interval Logic
+    // If Relay 2 is "ON" in the shadow, we toggle the physical pin for the beep effect
+    digitalWrite(PIEZO_PIN, (relayShadow & (1 << 1)) ? buzzerState : LOW);
+#endif
 }
+
 
 void setRelay(uint8_t channel, bool state) {
     if (channel < 1 || channel > 8) return;
@@ -67,15 +67,23 @@ void setRelay(uint8_t channel, bool state) {
     }
 }
 
+/* --- Web Interface Manual Control --- */
+/**
+ * @brief Overrides automatic logic and sets a relay state manually from Web UI.
+ */
 void setRelayManual(uint8_t channel, bool state) {
     if (channel < 1 || channel > 4) return;
     manualOverride |= (1 << (channel - 1)); 
     setRelay(channel, state);
 }
 
+/**
+ * @brief Releases a relay back to the automatic automation logic.
+ */
 void releaseToAuto(uint8_t channel) {
     if (channel < 1 || channel > 4) return;
     manualOverride &= ~(1 << (channel - 1)); 
+    // State will be re-calculated in the next updateRelayAutomation() cycle
 }
 
 /**
@@ -103,17 +111,20 @@ void updateRelayAutomation() {
         setRelay(1, (stRunning || stResult != 0));
     }
 
-    // --- Relay 2: BUZZER (Acoustic Alert) ---
+    // --- Relay 2: BUZZER LOGIC ---
     if (!(manualOverride & (1 << 1))) {
         if (manualUnlockPressed && stResult != 0) buzzerMuted = true;
         if (stResult == 0) buzzerMuted = false; 
 
         if (stResult != 0 && !buzzerMuted) {
+            // This creates the "Beep... Beep..." interval
             if (now - lastBuzzerToggle >= 500) {
                 buzzerState = !buzzerState;
                 lastBuzzerToggle = now;
+                // We force a hardware update to flip the Piezo pin immediately
+                sendRelayCommand();
             }
-            setRelay(2, buzzerState);
+            setRelay(2, true); // Keep logic state ON, updateHardwareRelays handles the pin toggling
         } else {
             setRelay(2, false);
         }

@@ -196,24 +196,31 @@ void twai_monitor_task(void *parameter) {
     while (1) {
         esp_task_wdt_reset();
         
-        // 1. Queue Health
         UBaseType_t fill = uxQueueMessagesWaiting(canQueue);
         if (fill >= 90) {
             safe_printf("[CAN] Queue Critical (%u/100). Resetting.\n", fill);
             xQueueReset(canQueue);
         }
 
-        // 2. Driver Health
         twai_status_info_t status;
         if (twai_get_status_info(&status) == ESP_OK) {
             if (status.state == TWAI_STATE_BUS_OFF) {
                 bus_off_count++;
                 safe_printf("[CAN] Bus-Off detected (%u). Recovering...\n", bus_off_count);
+                
                 twai_initiate_recovery();
-                vTaskDelay(pdMS_TO_TICKS(200));
+                // Give the hardware time to clear the error state
+                vTaskDelay(pdMS_TO_TICKS(500)); 
                 twai_start();
                 
-                if (bus_off_count > 5) esp_restart(); // Hard reset on persistent failure
+                if (bus_off_count > 10) { 
+                    safe_printf("[CAN] Persistent Failure. Entering Passive Monitor Mode.\n");
+                    // Instead of return (which crashes), we enter a long sleep
+                    while(1) {
+                        esp_task_wdt_reset();
+                        vTaskDelay(pdMS_TO_TICKS(5000));
+                    }
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(1000));

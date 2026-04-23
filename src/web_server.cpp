@@ -8,8 +8,10 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <ArduinoJson.h>
+// CRITICAL: This flag tells ElegantOTA to use AsyncWebServer instead of WebServer
+#define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 #include <ElegantOTA.h>
+#include <ArduinoJson.h>
 #include <ESPmDNS.h>
 
 #include "main.h"
@@ -27,7 +29,8 @@ AsyncWebSocket webSocket("/ws");
 
 // --- ArduinoJson V7 Optimized Buffer ---
 static JsonDocument doc;
-static char jsonBuffer[1536]; 
+// Use PSRAM for the buffer on T-2CAN to save internal Heap
+static char jsonBuffer[1536];
 
 // Forward Declaration
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, 
@@ -105,7 +108,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
             data[len] = 0; 
             const char* cmd = (const char*)data;
 
-            // --- RELAY CONTROLS ---
+            // --- RELAY CONTROLS (Common to all Hardware) ---
             if      (strcmp(cmd, "REL1_ON") == 0)   setRelayManual(1, true);
             else if (strcmp(cmd, "REL1_OFF") == 0)  setRelayManual(1, false);
             else if (strcmp(cmd, "REL1_AUTO") == 0) releaseToAuto(1);
@@ -125,9 +128,11 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
             // --- CHARGE MODES ---
             else if (strcmp(cmd, "MODE_DAILY") == 0) dailyModeActive = true;
             else if (strcmp(cmd, "MODE_TRIP") == 0)  dailyModeActive = false;
+            // ELCON Charger commands are sent via CANB (TWAI) - works on both boards!
             else if (strcmp(cmd, "CHARGE_STOP_REQ") == 0) sendElconCommand(true);
 
             // --- LOCKING & DIAGNOSTICS ---
+            // These interact with the state machine in loop()
             else if (strcmp(cmd, "LOCK_REQ") == 0)   WITH_DATA_MUTEX({ telemetryData.shouldLock = true; });
             else if (strcmp(cmd, "UNLOCK_REQ") == 0) manualUnlockPressed = true;
             else if (strcmp(cmd, "IMD_TEST_START") == 0) WITH_DATA_MUTEX({ telemetryData.selfTestRequested = true; });
@@ -197,6 +202,12 @@ void updateWebDashboard() {
         xSemaphoreGive(dataMutex);
     }
 
-    size_t len = serializeJson(doc, jsonBuffer);
+    #ifdef HARDWARE_T2CAN
+    // For T-2CAN (PSRAM pointer): Explicitly pass the pointer and the buffer size
+        size_t len = serializeJson(doc, jsonBuffer, 2048); 
+    #else
+        // For TCAN485 (Fixed array): The compiler knows the size automatically
+        size_t len = serializeJson(doc, jsonBuffer);
+    #endif
     webSocket.textAll(jsonBuffer, len);
 }

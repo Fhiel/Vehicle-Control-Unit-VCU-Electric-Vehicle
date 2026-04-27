@@ -142,8 +142,8 @@ extern twai_filter_config_t twai_filter_config;
 #ifdef HARDWARE_T2CAN
     // ====================== LilyGo T-2CAN Hardware Configuration ======================
     // Internal ESP32-S3 TWAI (CAN B) - Isolated Transceiver
-    #define PIN_CAN_TX          GPIO_NUM_7   // Internal ESP32-S3 TWAI
-    #define PIN_CAN_RX          GPIO_NUM_6   // Internal ESP32-S3 TWAI
+    #define PIN_CAN_TX              GPIO_NUM_7   // Internal ESP32-S3 TWAI
+    #define PIN_CAN_RX              GPIO_NUM_6   // Internal ESP32-S3 TWAI
 
     // SPI Interface for MCP2515 (second CAN bus - CAN A)
     #define PIN_MCP_CS              GPIO_NUM_10   // SPI Chip Select
@@ -184,7 +184,7 @@ extern twai_filter_config_t twai_filter_config;
     #define RELAY_4                 GPIO_NUM_4
 
     // General Purpose Input
-    #define INPUT_1                 GPIO_NUM_3    // Example: Ignition (Kl.15)
+    #define INPUT_13                GPIO_NUM_3    // Example: Ignition (Kl.15)
 
     // ====================== Aliases for backward compatibility ======================
     #define TYPE2_LOCK_PIN          TYPE2_LOCK_IN1

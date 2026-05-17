@@ -115,26 +115,25 @@ function setIsoGauge(val) {
 
 function triggerOta(type) {
     const label = type === 'firmware' ? 'the firmware (C++)' : 'the filesystem (UI)';
-    if (!confirm(`Do you want to update ${label} wirelessly?`)) return;
+    if (!confirm(`Do you want to update ${label} wirelessly from GitHub Cloud?`)) return;
 
     const btnFw = document.getElementById('btn-ota-fw');
     const btnFs = document.getElementById('btn-ota-fs');
     const status = document.getElementById('ota-status');
 
-    // Lock both buttons during upload
+    // Lock buttons during download
     btnFw.disabled = true; btnFs.disabled = true;
     btnFw.style.opacity = "0.4"; btnFs.style.opacity = "0.4";
     
-    status.innerText = `Sending download path for ${type}...`;
+    status.innerText = `Requesting ${type} from GitHub Pages...`;
     status.style.color = "var(--bertone-gold)";
 
-    // IP of your development PC in your home/garage network
-    const pcIp = "192.168.188.57"; 
-    
+    // AUTOMATED GITHUB PAGES CLOUD DELIVERY
+    const baseUrl = "https://fhiel.github.io/Vehicle-Control-Unit-VCU-Electric-Vehicle/";
     const fileName = type === 'firmware' ? 'firmware.bin' : 'littlefs.bin';
-    const fileUrl = `http://${pcIp}:8080/${fileName}`;
+    const fileUrl = `${baseUrl}${fileName}`;
 
-    // ElegantOTA v3 URL-Update payload
+    // Payload for ElegantOTA v3 URL-Update
     let bodyData = `url=${encodeURIComponent(fileUrl)}`;
     if (type === 'filesystem') {
         bodyData += `&mode=fs`;
@@ -149,19 +148,17 @@ function triggerOta(type) {
     })
     .then(response => {
         if (response.ok) {
-            status.innerText = `Success! VCU is flashing ${type} and rebooting...`;
+            status.innerText = `Success! VCU is downloading ${type} and rebooting...`;
             status.style.color = "#3ddb67";
-            // Reload dashboard after 6 seconds
             setTimeout(() => { window.location.reload(); }, 6000);
         } else {
-            throw new Error('VCU rejected the OTA download command.');
+            throw new Error('VCU rejected the OTA command.');
         }
     })
     .catch(error => {
         console.error('OTA Error:', error);
-        status.innerText = `Failed: Server unreachable or binary missing!`;
+        status.innerText = `Failed: Cloud file missing or VCU timeout!`;
         status.style.color = "var(--warning-red)";
-        // Release buttons on error
         btnFw.disabled = false; btnFs.disabled = false;
         btnFw.style.opacity = "1"; btnFs.style.opacity = "1";
     });

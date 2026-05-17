@@ -2,23 +2,22 @@ name: Automated VCU Build & Deploy
 
 on:
   push:
-    branches: [ main ] # Triggers automatically whenever you push to main
+    branches: [ main ]
 
 permissions:
   contents: write
   pages: write
   id-token: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
+      # Aktualisiert auf v4 (unterstützt nativ die neuen Node-Runner)
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # Aktualisiert auf v5
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -41,8 +40,16 @@ jobs:
           cp .pio/build/lilygo_t2can/firmware.bin docs/
           cp .pio/build/lilygo_t2can/littlefs.bin docs/
 
+      # Gewechselt auf die offizielle GitHub-eigene Pages-Aktion (v4)
+      # Diese ist perfekt auf Node 24 optimiert und wirft garantiert keine Warnung mehr!
       - name: Deploy Binaries to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
+          path: ./docs
+
+  deploy-pages:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

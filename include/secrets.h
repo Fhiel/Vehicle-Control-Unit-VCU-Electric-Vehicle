@@ -8,10 +8,10 @@
 #define SECRETS_H
 
 // --- Device Identity ---
-#define DEVICE_HOSTNAME "VCU-X19e"
+#define DEVICE_HOSTNAME "vcu-x19e"
 
 // --- Access Point Settings (Car Internal Network) ---
-#define AP_SSID       "VCU_Bertone_X1/9e"
+#define AP_SSID       "VCU_Bertone_X19e"
 #define AP_PASS       "19832026"
 
 // --- Station Settings (Home/Garage Network) ---

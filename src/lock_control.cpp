@@ -25,17 +25,17 @@ static unsigned long lastBmsStatus = 0x01;
 void setMotor(MotorState motorState) {
     switch (motorState) {
         case MOTOR_LOCK:
-            digitalWrite(TYPE2_LOCK_IN1, HIGH);
-            digitalWrite(TYPE2_LOCK_IN2, LOW);
+            digitalWrite(TYPE2_LOCK_IN1_PIN, HIGH);
+            digitalWrite(TYPE2_LOCK_IN2_PIN, LOW);
             break;
         case MOTOR_UNLOCK:
-            digitalWrite(TYPE2_LOCK_IN1, LOW);
-            digitalWrite(TYPE2_LOCK_IN2, HIGH);
+            digitalWrite(TYPE2_LOCK_IN1_PIN, LOW);
+            digitalWrite(TYPE2_LOCK_IN2_PIN, HIGH);
             break;
         case MOTOR_OFF:
         default:
-            digitalWrite(TYPE2_LOCK_IN1, LOW);
-            digitalWrite(TYPE2_LOCK_IN2, LOW);
+            digitalWrite(TYPE2_LOCK_IN1_PIN, LOW);
+            digitalWrite(TYPE2_LOCK_IN2_PIN, LOW);
             break;
     }
 }
@@ -70,7 +70,7 @@ void handleLockState() {
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         currentBmsStatus = telemetryData.bmsStatus;
         // In your system, BMS "CHARGE" state (0x04) indicates plug is inserted (PP)
-        plugDetected = (currentBmsStatus == 0x04 || telemetryData.is_charging);
+        plugDetected = (currentBmsStatus == BMS_STATUS_CHARGE || telemetryData.is_charging);
         unlockRequested = manualUnlockPressed;
         vifcStatus = telemetryData.vifcStatus;
         xSemaphoreGive(dataMutex);
@@ -78,7 +78,7 @@ void handleLockState() {
 
     // 2. BMS Transition Watchdog (Trigger Self-Test on startup/charge)
     if (currentBmsStatus != lastBmsStatus) {
-        if (currentBmsStatus == 0x02 || currentBmsStatus == 0x04) {
+        if (currentBmsStatus == BMS_STATUS_READY || currentBmsStatus == BMS_STATUS_CHARGE) {
             bool selfTestNeeded = (vifcStatus & (1 << 12)) || (vifcStatus & (1 << 13));
             if (selfTestNeeded && !telemetryData.selfTestRunning) {
                 WITH_DATA_MUTEX({ telemetryData.selfTestRequested = true; });

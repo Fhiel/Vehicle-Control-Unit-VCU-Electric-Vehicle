@@ -107,7 +107,6 @@ void CAN_Transmit_Task() {
 
         updateRangeEstimation();
         send_proxy_bms_data();
-        sendRelayCommand(); 
         
         // Charger heartbeat
         if (telemetryData.is_charging || chargerStopReq) {

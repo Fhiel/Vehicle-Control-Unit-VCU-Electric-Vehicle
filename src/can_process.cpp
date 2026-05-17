@@ -93,6 +93,18 @@ void map_can_to_telemetry(const twai_message_t& msg) {
             }
             break;
 
+        case 0x379: // BMS Info
+            if (dlc >= 5) { // Sicherstellen, dass Byte 4 (das 5. Byte) existiert
+                // Den exakten Statuswert (0-5) auslesen
+                telemetryData.bmsStatus = msg.data[4];
+                
+                // is_charging ist TRUE, wenn der Status exakt 3 (Charge) ist
+                telemetryData.is_charging = (telemetryData.bmsStatus == BMS_STATUS_CHARGE); 
+                
+                telemetryData.bmsStatusValid = true;
+            }
+            break;
+
         case 0x356: // BMS: Current + Temp
             if (dlc >= 6) {
                 int16_t raw_current = (msg.data[3] << 8) | msg.data[2];
@@ -117,6 +129,8 @@ void map_can_to_telemetry(const twai_message_t& msg) {
             if (dlc >= 6) {
                 telemetryData.imdIsoR = (msg.data[1] << 8) | msg.data[0];
                 telemetryData.imdIsoRValid = true;
+                telemetryData.imdStatus = (msg.data[3] << 8) | msg.data[2];
+                telemetryData.imdStatusValid = true;
                 telemetryData.vifcStatus = (msg.data[5] << 8) | msg.data[4];
                 telemetryData.vifcStatusValid = true;
             }
@@ -134,15 +148,7 @@ void map_can_to_telemetry(const twai_message_t& msg) {
                 }
             }
             break;
-            
-        case 0x01: // Relay Module Feedback (ID 0x01)
-        if (dlc >= 3) {
-            // data[0] Function Code (0x01 oder 0x02)
-            // data[1] Address Code (0x01)
-            // data[2] Status of  Relay 1-4
-            telemetryData.relayInputs = msg.data[2]; 
-        }
-        break;
+
     }
     xSemaphoreGive(dataMutex);
 }
@@ -169,19 +175,6 @@ void process_can_messages(void *parameter) {
             }
         }
 
-        // Autonomous Demo Mode Logic
-        if (demoModeActive) {
-            if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-                demo_phase += 0.05f;
-                telemetryData.motorRPM = (uint16_t)((sin(demo_phase) + 1.0f) * 1500.0f);
-                telemetryData.bmsSoC = 75;
-                telemetryData.bmsStatus = 3; // Drive Mode
-                telemetryData.motorRPMValid = true;
-                telemetryData.bmsSoCValid = true;
-                xSemaphoreGive(dataMutex);
-                update_all_timestamps(now);
-            }
-        }
         vTaskDelay(pdMS_TO_TICKS(20)); 
     }
 }
@@ -267,10 +260,11 @@ void check_data_timeout(unsigned long currentMillis) {
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) != pdTRUE) return;
 
     for (int i = 0; i < NUM_FILTERS; i++) {
-        unsigned long diff = (currentMillis >= last_id_timestamps[i]) ? (currentMillis - last_id_timestamps[i]) : 0;
+        uint32_t id = FILTERED_IDS[i];
+        unsigned long last_seen = last_id_timestamps[i];
         unsigned long timeout = (FILTERED_IDS[i] == 0x37) ? SLOW_TIMEOUT_MS : FAST_TIMEOUT_MS;
 
-        if (diff > timeout && last_id_timestamps[i] != 0) {
+        if (last_seen == 0 || (currentMillis - last_seen > timeout)) {
             switch (FILTERED_IDS[i]) {
                 case 0x37:
                     telemetryData.imdIsoRValid = false;
@@ -280,6 +274,7 @@ void check_data_timeout(unsigned long currentMillis) {
                 case 0x239:
                     telemetryData.motorRPMValid = false;
                     telemetryData.motorTempValid = false;
+                    telemetryData.mcuFlags = 0x02; // MCU STOP Bit (ID 2)
                     break;
                 case 0x355:
                     telemetryData.bmsSoCValid = false;

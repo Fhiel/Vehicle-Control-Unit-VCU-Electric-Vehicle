@@ -10,13 +10,13 @@
 
 #ifdef HARDWARE_T2CAN
 #include <SPI.h>
-#include <mcp_can.h>
-extern MCP_CAN CAN_Peripheral; // Defined in main.cpp or peripheral_can.cpp
+#include <mcp2515.h>
 #endif
 
 // --- Helper Logic (State Calculations remain identical) ---
 
-uint8_t calculateMcuStateID(uint16_t flags) {
+uint8_t calculateMcuStateID(uint16_t flags, bool valid) {
+    if (!valid) return 255;
     if (flags & 0x08) return 4; // WARN
     if (flags & 0x04) return 3; // LIMIT
     if (flags & 0x02) return 2; // STOP
@@ -24,7 +24,8 @@ uint8_t calculateMcuStateID(uint16_t flags) {
     return 0;                   // OK
 }
 
-uint8_t calculateImdStateID(uint16_t status) {
+uint8_t calculateImdStateID(uint16_t status, bool valid) {
+    if (!valid) return 255;
     bool iso_error = (status & 0x03); 
     if (iso_error) return 5;
     if (status & (1 << 2)) return 2; // ERR
@@ -34,7 +35,8 @@ uint8_t calculateImdStateID(uint16_t status) {
     return 0;
 }
 
-uint8_t calculateVifcStateID(uint16_t vifc) {
+uint8_t calculateVifcStateID(uint16_t vifc, bool valid) {
+    if (!valid) return 255;
     if (vifc & 0x0016) return 1; // COM ERR
     if (vifc & 0x0100) return 2; // STALE
     if (vifc & 0x3000) return 3; // TST ERR
@@ -48,49 +50,53 @@ char calculateRndChar(uint16_t flags) {
         case 0:  return 'N';
         case 1:  return 'R';
         case 2:  return 'D';
-        default: return ' '; 
+        default: return '-'; 
     }
 }
 
 /**
  * @brief Packs telemetry data into a 15-byte buffer for cross-platform use.
  */
-void packOptimizedTelemetry(uint8_t* buf) {
-    if (!dataMutexInitialized) return;
+bool packOptimizedTelemetry(uint8_t* buf) {
+    if (!dataMutexInitialized) return false;
 
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
-        // RPM (Big Endian)
         uint16_t rpm = telemetryData.motorRPMValid ? telemetryData.motorRPM : 0;
         buf[0] = (rpm >> 8) & 0xFF;
         buf[1] = rpm & 0xFF;
 
         // Gear selection char
-        buf[2] = (uint8_t)calculateRndChar(telemetryData.mcuFlags);
+        buf[2] = telemetryData.motorRPMValid ? (uint8_t)calculateRndChar(telemetryData.mcuFlags) : (uint8_t)'-';
 
         // Temperatures
-        buf[3] = (int8_t)telemetryData.motor_temp;
-        buf[4] = (int8_t)telemetryData.mcu_temp;
+        buf[3] = telemetryData.motorTempValid ? (int8_t)telemetryData.motor_temp : -99;
+        buf[4] = telemetryData.mcuTempValid   ? (int8_t)telemetryData.mcu_temp   : -99;
 
         // State IDs for Dashboard String Lists
-        buf[5] = calculateMcuStateID(telemetryData.mcuFlags);
-        buf[6] = calculateImdStateID(telemetryData.imdStatus);
-        buf[7] = calculateVifcStateID(telemetryData.vifcStatus);
+        buf[5] = calculateMcuStateID(telemetryData.mcuFlags, telemetryData.motorRPMValid);
+        buf[6] = calculateImdStateID(telemetryData.imdStatus, telemetryData.imdStatusValid);
+        buf[7] = calculateVifcStateID(telemetryData.vifcStatus, telemetryData.vifcStatusValid);
 
         // Insulation resistance
-        uint16_t iso = telemetryData.imdIsoRValid ? telemetryData.imdIsoR : 50000;
+        uint16_t iso = telemetryData.imdIsoRValid ? telemetryData.imdIsoR : 0;
         buf[8] = (iso >> 8) & 0xFF;
         buf[9] = iso & 0xFF;
 
         // Fault & Validity Mask
         buf[10] = telemetryData.mcuFaultLevel;
-        buf[11] = (telemetryData.imdIsoRValid ? (1 << 0) : 0) | 
-                  (telemetryData.motorRPMValid ? (1 << 1) : 0);
+
+        uint8_t vMask = 0;
+        if (telemetryData.imdIsoRValid)   vMask |= (1 << 0);
+        if (telemetryData.motorRPMValid)  vMask |= (1 << 1);
+        buf[11] = vMask;
 
         // Padding (reserved for future use)
         buf[12] = 0; buf[13] = 0; buf[14] = 0;
 
         xSemaphoreGive(dataMutex);
+        return true; // Data packed successfully
     }
+    return false; // Data not ready or mutex issue
 }
 
 /**
@@ -116,43 +122,78 @@ void send_rs485_telemetry() {
 }
 #endif
 
+
 /**
  * @brief T-2CAN only: Sends telemetry via 2nd CAN Interface (CANA / MCP2515).
+ * Uses a sanitized buffer to prevent stack-garbage (dynamic noise) from appearing on the bus.
  */
 #ifdef HARDWARE_T2CAN
+
 void send_can_telemetry() {
-    uint8_t buf[15];
-    packOptimizedTelemetry(buf); 
+    // 1. Lokaler Puffer (wie bisher)
+    uint8_t buf[15] = {0};
 
-    // Frame 1: Dynamic/Fast Data - ID 0x100
-    uint8_t frame1[8];
-    frame1[0] = buf[0];  // RPM High
-    frame1[1] = buf[1];  // RPM Low
-    frame1[2] = buf[2];  // Gear
-    frame1[3] = buf[3];  // Motor Temp
-    frame1[4] = buf[4];  // MCU Temp
-    frame1[5] = buf[11]; // Validity Mask
-    frame1[6] = 0; 
-    frame1[7] = 0; 
-    
-    // Frame 2: Status & Insulation - ID 0x200
-    uint8_t frame2[8];
-    frame2[0] = buf[5];  // McuStateID
-    frame2[1] = buf[6];  // ImdStateID
-    frame2[2] = buf[7];  // VifcStateID
-    frame2[3] = buf[8];  // ISO High
-    frame2[4] = buf[9];  // ISO Low
-    frame2[5] = buf[10]; // McuFaultLevel
-    frame2[6] = 0; 
-    frame2[7] = 0; 
+    // 2. Daten packen (Mutex-Check intern in packOptimizedTelemetry)
+    if (!packOptimizedTelemetry(buf)) {
+        return; 
+    }
 
-    // Transmit via MCP2515 on T-2CAN
-    // sendMsgBuf arguments: ID, isExtended (0), length (8), buffer
-    CAN_Peripheral.sendMsgBuf(0x100, 0, 8, frame1);
-    
-    // Small inter-frame delay to prevent buffer issues on the RP2040 receiver side
-    delay(2); 
-    
-    CAN_Peripheral.sendMsgBuf(0x200, 0, 8, frame2);
+    // 3. Vorbereiten der autowp-Strukturen
+    struct can_frame frame1;
+    struct can_frame frame2;
+
+    // Frame 1 Setup (ID 0x100)
+    frame1.can_id  = 0x100;
+    frame1.can_dlc = 8;
+    frame1.data[0] = buf[0];  // RPM High
+    frame1.data[1] = buf[1];  // RPM Low
+    frame1.data[2] = buf[2];  // Gear
+    frame1.data[3] = buf[3];  // Motor Temp
+    frame1.data[4] = buf[4];  // MCU Temp
+    frame1.data[5] = buf[11]; // Validity Mask
+    frame1.data[6] = 0;
+    frame1.data[7] = 0;
+
+    // Frame 2 Setup (ID 0x200)
+    frame2.can_id  = 0x200;
+    frame2.can_dlc = 8;
+    frame2.data[0] = buf[5];  // McuStateID
+    frame2.data[1] = buf[6];  // ImdStateID
+    frame2.data[2] = buf[7];  // VifcStateID
+    frame2.data[3] = buf[8];  // ISO High
+    frame2.data[4] = buf[9];  // ISO Low
+    frame2.data[5] = buf[10]; // McuFaultLevel
+    frame2.data[6] = 0;
+    frame2.data[7] = 0;
+
+    // 5. Versand via SPI
+    if (mcpMutex != nullptr && xSemaphoreTake(mcpMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        mcp2515.sendMessage(&frame1);
+        delayMicroseconds(500); // 1ms ist oft zu lang, 500us reicht dem Controller
+        mcp2515.sendMessage(&frame2);
+        xSemaphoreGive(mcpMutex);
+    }
 }
 #endif
+
+
+/**
+ * @brief Liest eingehende CAN-Nachrichten auf dem ESP32, 
+ * damit ACKs gesendet werden und der Puffer nicht blockiert.
+void receive_can_telemetry() {
+    struct can_frame rcvFrame;
+
+    if (mcpMutex != nullptr && xSemaphoreTake(mcpMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        // Solange Nachrichten im Puffer sind, auslesen
+        while (mcp2515.readMessage(&rcvFrame) == MCP2515::ERROR_OK) {
+            // Hier prüfen wir auf die ID vom RP2040
+            if (rcvFrame.can_id == 0x300) {
+                // Optional: Verarbeite Odometer Daten
+                // uint32_t total_km = (rcvFrame.data[0] << 24) | ...
+            }
+        }
+        xSemaphoreGive(mcpMutex);
+    }
+
+}
+*/

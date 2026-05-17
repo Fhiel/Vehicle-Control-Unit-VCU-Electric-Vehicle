@@ -10,6 +10,8 @@
 #include "main.h"
 #include <driver/ledc.h>
 
+bool enablePumpDebug = false;
+
 /**
  * @brief Controls Inverter Pump speed based on MCU/Motor temperature.
  * Logic: Linear ramp between MIN_TEMP and MAX_TEMP.
@@ -40,7 +42,7 @@ void update_inv_pump(int8_t mcu_temp, bool valid) {
 
     // Debug output every 5 seconds
     static unsigned long lastDebug = 0;
-    if (millis() - lastDebug >= 5000) {
+    if (enablePumpDebug && (millis() - lastDebug >= 5000)) {
         safe_printf("[PUMP] Inverter: %d°C, Duty: %d%%\n", mcu_temp, (duty_cycle * 100 / 255));
         lastDebug = millis();
     }
@@ -76,7 +78,7 @@ void update_bat_pump(float bat_temp, bool valid) {
 
     // Debug output every 5 seconds
     static unsigned long lastDebug = 0;
-    if (millis() - lastDebug >= 5000) {
+    if (enablePumpDebug && (millis() - lastDebug >= 5000)) {
         safe_printf("[PUMP] Battery: %.1f°C, Duty: %d%%\n", bat_temp, (duty_cycle * 100 / 255));
         lastDebug = millis();
     }

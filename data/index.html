@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>X1/9e VCU Dashboard</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+    <style>
+
+</style>
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <div class="header-bar">
+            <div class="logo-area" onclick="showPage('home')">
+                    <img src="logo.png" class="logo-img" alt="X1/9e Logo">
+            </div>
+            <div id="status-tag" onclick="showPage('expert')">BERTONE</div>
+            <div class="range-box" onclick="toggleRangeDisplay()">
+                <span class="range-val" id="range-display">0</span>
+                <span class="range-unit" id="range-unit">Range km</span>
+            </div>
+        </div>
+
+        <div id="page-home" class="page-section">
+            <div class="control-row">
+                <div class="mode-grid">
+                    <div id="mode-trip" class="mode-card" onclick="send('MODE_TRIP')">
+                        <span class="icon-svg">
+                            <svg viewBox="0 0 24 24"><path d="M11,2V4.07C7.38,4.53 4.53,7.38 4.07,11H2V13H4.07C4.53,16.62 7.38,19.47 11,19.93V22H13V19.93C16.62,19.47 19.47,16.62 19.93,13H22V11H19.93C19.47,7.38 16.62,4.53 13,4.07V2H11M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6Z"/></svg>
+                        </span>
+                        <span class="mode-label">Trip</span>
+                    </div>
+                    <div class="mode-card bolt-card" onclick="if(confirm('Stop Charging?')) send('CHARGE_STOP_REQ')">
+                        <span class="icon-svg">
+                            <svg viewBox="0 0 24 24"><path d="M7,2V13H10V22L17,10H13L17,2H7Z"/></svg>
+                        </span>
+                        <span class="mode-label">Charge</span>
+                    </div>
+                    <div id="mode-daily" class="mode-card" onclick="send('MODE_DAILY')">
+                        <span class="icon-svg">
+                            <svg viewBox="0 0 24 24"><path d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z"/></svg>
+                        </span>
+                        <span class="mode-label">Daily</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="icon-grid">
+                <div class="icon-card" id="card-rel-1">
+                    <span class="icon-svg">
+                        <svg viewBox="0 0 32 32"><path d="M 11 9 L 11 11 L 13 11 L 13 13 L 7.5625 13 L 5.84375 10.4375 L 5.53125 10 L 1 10 L 1 15.6875 L 6 17.6875 L 6 25 L 20.53125 25 L 20.8125 24.5625 L 29.5 12 L 31 12 L 31 10 L 27.65625 10 L 27.40625 10.1875 L 21 15 L 21 13 L 15 13 L 15 11 L 17 11 L 17 9 Z M 3 12 L 4.4375 12 L 6 14.34375 L 6 15.5 L 3 14.3125 Z M 25.78125 13.9375 L 19.5 23 L 8 23 L 8 15 L 19 15 L 19 19 L 20.59375 17.8125 Z M 29.5 16 C 29.5 16 28 18.671875 28 19.5 C 28 20.328125 28.671875 21 29.5 21 C 30.328125 21 31 20.328125 31 19.5 C 31 18.671875 29.5 16 29.5 16 Z"/></svg>
+                    </span>
+                </div>
+                <div class="icon-card" id="card-rel-2" onclick="send('PIEZO_TOGGLE')" style="cursor: pointer;">
+                    <span class="icon-svg">
+                        <svg viewBox="0 0 24 24"><path d="M12,2L1,21H23M12,6L19.53,19H4.47M11,10H13V14H11M11,16H13V18H11V16Z" /></svg>
+                    </span>
+                </div>
+                <div class="icon-card" id="card-rel-3">
+                    <span class="icon-svg">
+                        <svg id="icon-fan" viewBox="0 0 24 24" fill="currentColor"><path d="M12,11a1,1,0,1,0,1,1,1,1,0,0,0-1-1m.5-9C17,2,17.1,5.57,14.73,6.75a3.36,3.36,0,0,0-1.62,2.47,3.17,3.17,0,0,1,1.23.91C18,8.13,22,8.92,22,12.5c0,4.5-3.58,4.6-4.75,2.23a3.44,3.44,0,0,0-2.5-1.62,3.24,3.24,0,0,1-.91,1.23c2,3.69,1.2,7.66-2.38,7.66C7,22,6.89,18.42,9.26,17.24a3.46,3.46,0,0,0,1.62-2.45,3,3,0,0,1-1.25-.92C5.94,15.85,2,15.07,2,11.5,2,7,5.54,6.89,6.72,9.26A3.39,3.39,0,0,0,9.2,10.87a2.91,2.91,0,0,1,.92-1.22C8.13,6,8.92,2,12.48,2Z"/></svg>
+                    </span>
+                </div>
+                <div class="icon-card" id="card-rel-4">
+                    <span class="icon-svg" style="transform: rotate(90deg);">
+                        <svg viewBox="0 0 1000 1000"><path d="M500 177q-115 0 -215 58q-96 56 -152 152q-58 100 -58 215t58 215q56 96 152 152q100 58 215 58t215 -58q96 -56 152 -152q58 -100 58 -215t-58 -215q-56 -96 -152 -152q-100 -58 -215 -58zM500 259q93 0 173 46q78 46 124 124q46 80 46 173t-46 173q-46 78 -124 124 q-80 46 -173 46q-36 0 -72 -7l389 -336l-388 -336q35 -7 71 -7zM333 302l361 302l-358 300q-82 -45 -130 -124q-49 -82 -49 -177.5t48 -176.5q48 -79 128 -124z"/></svg>
+                    </span>
+                </div>
+            </div>
+
+            <div class="main-diag">
+                <div class="diag-box ok" id="box-it">
+                    <div class="diag-header">
+                        <span class="diag-label">Inv</span>
+                        <div class="val-top"><span id="i-temp">--</span><span class="unit">°C</span></div>
+                    </div>
+                    <div class="gauge-wrapper">
+                        <div id="i-temp-needle" class="needle"></div>
+                        <div class="scale-container">
+                            <div class="red-zone"></div>
+                            <div class="tick thick gold"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick gold"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick gold"></div>
+                        </div>
+                        <div class="scale-labels">
+                            <span class="scale-val">0</span>
+                            <span class="scale-val">50</span>
+                            <span class="scale-val">95</span>
+                        </div>
+                    </div>
+                </div> 
+
+                <div class="diag-box" id="box-iso">
+                    <div class="diag-header">
+                        <span class="diag-label">ISO-R</span>
+                        <div class="val-top"><span id="iso-val">--</span><span class="unit">kΩ</span></div>
+                    </div>
+                    <div class="gauge-wrapper">
+                        <div id="iso-needle" class="needle"></div>
+                        <div class="scale-container">
+                            <div class="iso-yellow"></div>
+                            <div class="iso-red"></div>
+                            <div class="tick thick gold"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick gold"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick"></div>
+                            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+                            <div class="tick thick gold"></div>
+                        </div>
+                        <div class="scale-labels">
+                            <span class="scale-val">50k</span>
+                            <span class="scale-val">1k</span>
+                            <span class="scale-val">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-expert" class="page-section" style="display:none;">
+            <div class="expert-grid">
+                <div class="expert-box">
+                    <h2>MCU / Motor (0x239)</h2>
+                    <div class="data-row"><span>Fault Level:</span><span class="val" id="mcu_flt">0</span></div>
+                    <div class="data-row"><span>RPM:</span><span><span class="val" id="mcu_rpm">0</span><span class="unit">RPM</span></span></div>
+                    <div class="data-row"><span>Motor Temp:</span><span><span class="val" id="mcu_mT_exp">0</span><span class="unit">°C</span></span></div>
+                    <div class="data-row"><span>MCU Temp:</span><span><span class="val" id="mcu_cT">0</span><span class="unit">°C</span></span></div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>BMS (0x355, 0x356)</h2>
+                    <div class="data-row"><span>Status:</span><span class="val" id="bms_st">0</span></div>
+                    <div class="data-row"><span>SoC:</span><span><span class="val" id="bms_soc">0</span><span class="unit">%</span></span></div>
+                    <div class="data-row"><span>Current:</span><span><span class="val" id="bms_cur">0.0</span><span class="unit">A</span></span></div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>IMD / Isolation</h2>
+                    <div class="data-row"><span>Internal Status:</span><span class="val" id="imd_st_val">--</span></div>            
+                    <div class="data-row"><span>Resistance:</span><span><span class="val" id="imd_res">--</span><span class="unit">kΩ</span></span></div>
+                    <div class="data-row"><span>HV1 Voltage:</span><span><span class="val" id="imd_hv1">--</span><span class="unit">V</span></span></div>
+                    <div class="data-row"><span>Self Test Running:</span><span class="val" id="vcu_selftest">n/a</span></div>           
+                </div>
+
+                <div class="expert-box">
+                    <h2>VCU &amp; LED+ALARM</h2>
+                    <div class="data-row"><span>LED Check Oil:</span><span class="val" id="hw_ledoil">n/a</span></div>
+                    <div class="data-row"><span>LED Battery:</span><span class="val" id="hw_ledbat">n/a</span></div>
+                    <div class="data-row"><span>ALARM PIEZO:</span><span class="val" id="hw_PIEZO">n/a</span></div>
+                    <div class="data-row"><span>ALARM ACTIVE (Log):</span><span class="val" id="hw_piezo_act">n/a</span></div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>Cooling &amp; Pumps</h2>
+                    <div class="data-row"><span>Battery Pump Relay:</span><span class="val" id="hw_batrelay">n/a</span></div>           
+                    <div class="data-row"><span>Battery Pump PWM:</span><span><span class="val" id="bat-pump">0</span><span class="unit">%</span></span></div>
+                    <div class="data-row"><span>Inverter Pump Relay:</span><span class="val" id="hw_invrelay">n/a</span></div>
+                    <div class="data-row"><span>Inverter Pump PWM:</span><span><span class="val" id="inv-pump">0</span><span class="unit">%</span></span></div>
+                    <div class="data-row"><span>Fan Relay:</span><span class="val" id="hw_fan">n/a</span></div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>Type2 Lock &amp; WS2812</h2>
+                    <div class="data-row"><span>Manual Unlock:</span><span class="val" id="hw_manual">n/a</span></div>
+                    <div class="data-row"><span>Type2 Lock IN1:</span><span class="val" id="hw_lock1">n/a</span></div>
+                    <div class="data-row"><span>Type2 Lock IN2:</span><span class="val" id="hw_lock2">n/a</span></div>
+                    <div class="data-row"><span>Lock Feedback:</span><span class="val" id="hw_lockfb">n/a</span></div>
+                    <div class="data-row"><span>Port Lock:</span><span class="val" id="d-lock">--</span></div>
+                    <div class="data-row"><span>WS2812 Status:</span><span class="val" id="ws2812_status" style="font-weight:bold;">n/a</span></div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>Proxy BMS (Hyper9)</h2>
+                    <div class="data-row"><span>Hyper9 SoC (raw):</span><span class="val" id="p-soc">0</span></div>
+                    <div class="data-row"><span>Power Limit:</span><span><span class="val" id="p-lim">100</span><span class="unit">%</span></span></div>
+                    <div class="data-row"><span>Drive Inhibit:</span><span class="val" id="p-inh">--</span></div>
+                    <div class="data-row"><span>System Fault:</span><span class="val" id="p-flt">--</span></div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>System Tests & Alarm</h2>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                        <button id="btn-piezo" onclick="send('PIEZO_TOGGLE')">ALARM</button>
+                        <button onclick="send('PIEZO_AUTO')">AUTO</button>
+                        <button onclick="if(confirm('IMD Test?')) send('IMD_TEST_START')" style="color:var(--tesla-red); border-color:var(--tesla-red);">IMD TEST</button>
+                        <button onclick="send('IMD_AUTO')">AUTO</button>
+                    </div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>Hardware Overrides</h2>
+                    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px; font-size:0.8em;">
+                        <button id="btn-oil" onclick="send('LED_CHECK_OIL_TOGGLE')">OIL LED</button>
+                        <button onclick="send('LED_CHECK_OIL_AUTO')">AUTO</button>
+                        
+                        <button id="btn-bat" onclick="send('LED_BATTERY_TOGGLE')">BAT LED</button>
+                        <button onclick="send('LED_BATTERY_AUTO')">AUTO</button>
+
+                        <button id="btn-bat-pump" onclick="send('BAT_PUMP_TOGGLE')">PUMP BAT</button>
+                        <button onclick="send('BAT_PUMP_AUTO')">AUTO</button>
+
+                        <button id="btn-inv-pump" onclick="send('INV_PUMP_TOGGLE')">PUMP INV</button>
+                        <button onclick="send('INV_PUMP_AUTO')">AUTO</button>
+                        
+                        <button id="btn-fan" onclick="send('FAN_TOGGLE')">FAN</button>
+                        <button onclick="send('FAN_AUTO')">AUTO</button>
+                    </div>
+                </div>    
+
+                <div class="expert-box">
+                    <h2>Aux Relays (Reserve)</h2>
+                    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+                        <button id="btn-rel11" onclick="send('REL1_TOGGLE')">R11</button>
+                        <button id="btn-rel12" onclick="send('REL2_TOGGLE')">R12</button>
+                        <button id="btn-rel13" onclick="send('REL3_TOGGLE')">R13</button>
+                        <button id="btn-rel14" onclick="send('REL4_TOGGLE')">R14</button>
+                    </div>
+                </div>
+
+                <div class="expert-box">
+                    <h2>VCU MAINTENANCE SYSTEM</h2>
+                    <div style="display:grid; grid-template-columns: repeat(1, 1fr); gap:10px;">
+                        <button id="btn-ota-fw" onclick="triggerOta('firmware')" style="color:var(--tesla-red); border-color:var(--tesla-red); cursor:pointer; font-weight:bold; padding:8px;">
+                            UPGRADE FIRMWARE (OTA)
+                        </button>
+                        
+                        <button id="btn-ota-fs" onclick="triggerOta('filesystem')" style="color:var(--bertone-gold); border-color:var(--bertone-gold); cursor:pointer; font-weight:bold; padding:8px;">
+                            REFRESH FILESYSTEM (UI)
+                        </button>
+                    </div>
+                    <div id="ota-status" style="margin-top:8px; text-align:center; font-size:0.85em; color:#888;">
+                        System ready for maintenance
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

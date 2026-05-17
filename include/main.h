@@ -8,18 +8,22 @@
 #include <freertos/semphr.h>
 #include <driver/twai.h>
 #include <driver/gpio.h>
-#include <FastLED.h>
 #include <cstdint>
 #include <esp_err.h> 
+#include "Freenove_WS2812_Lib_for_ESP32.h"
 
 #include "utils.h"
 #include "CAN_Transmit.h"
 #include "relay_control.h"
 
+// ====================== MCP2515 (autowp) ======================
+#include <SPI.h>          
+#include <mcp2515.h>      
+
 using namespace std;
 
 // === CONSTANTS ===
-#define NUM_FILTERS 8
+#define NUM_FILTERS 9
 #define MAX_IDS 50
 #define RS485_BAUDRATE 115200
 #define TWAI_BAUDRATE 500000
@@ -43,6 +47,15 @@ extern const uint32_t SLOW_IDS[];
 #define BMS_SOC_MAX         100
 #define BMS_CURRENT_MAX     1000.0f
 #define IMD_ISO_R_MAX       50000
+#define BMS_STATUS_BOOT      0
+#define BMS_STATUS_READY     1
+#define BMS_STATUS_DRIVE     2
+#define BMS_STATUS_CHARGE    3
+#define BMS_STATUS_PRECHARGE 4
+#define BMS_STATUS_ERROR     5
+
+// === ALARM FLAGS ===
+
 
 /**
  * @struct TelemetryData
@@ -95,14 +108,45 @@ typedef struct {
     volatile bool imdStatusValid;
     volatile bool vifcStatusValid;
 
-    // --- VCU Internal State & Locking ---
+    // --- VCU State & Control ---
+    // --- VCU Internal State ---
+    volatile bool fiveVEnabled;       // Main 5V rail status (powers transceivers, MCP2515, etc.)
+    volatile bool canBStby;           // CAN B Transceiver Standby
+
+    // Type 2 Lock
     volatile bool isLocked;           // Bolt is physically engaged
     volatile bool isLocking;          // Motor is currently running (Lock)
     volatile bool isUnLocking;        // Motor is currently running (Unlock)
     volatile bool shouldLock;         // Request from Web UI
-    volatile uint8_t relayInputs;     // Physical Inputs (e.g. Ignition Kl.15)
-    volatile uint8_t bat_pump_pwm;    // Feedback for Dashboard
-    volatile uint8_t inv_pump_pwm;    // Feedback for Dashboard
+    volatile bool lockIn1;            // DRV8871 IN1
+    volatile bool lockIn2;            // DRV8871 IN2
+    volatile bool lockFeedback;       // Lock Position Feedback sensor
+    volatile bool manualUnlockBtn;    // Manual Unlock Button
+
+    // Coolant Pumps & Fan
+    volatile bool batPumpRelay;       // Battery pump relay state
+    volatile uint8_t bat_pump_pwm;    // Battery pump speed (PWM value for dashboard feedback)
+    volatile bool invPumpRelay;       // Inverter pump relay state
+    volatile uint8_t inv_pump_pwm;    // Inverter pump speed (PWM value for dashboard feedback)
+    volatile bool fanRelay;           // Cooling fan relay state
+
+    // Signal Outputs and Alarm Conditions
+    volatile uint16_t alarmRegister;   // Central Alarm Register (bitfield for various fault conditions)
+    volatile bool ledCheckOil;         // Dashboard "Check Oil" LED state
+    volatile bool ledBattery;          // Dashboard "Battery" LED state
+    volatile bool isAlarm;             // TRUE = A critical fault condition is active (e.g., BMS hardware fault, self-test failure, etc.) - Used for dashboard red status tag and alarm logic
+    volatile bool isPiezoOn;           // TRUE = The piezo buzzer should be active (driven by critical fault conditions or manual override)
+    volatile uint8_t ws2812Status;     // 0 = Off, 1 = Green (Normal), 2 = Red (Fault)
+
+    // Auxiliary (General Purpose)
+    // Digital Inputs
+    volatile bool auxinput13;              // INPUT_13 
+
+    // Relays / Outputs
+    volatile bool auxRelay11;           // RELAY_11
+    volatile bool auxRelay12;           // RELAY_12
+    volatile bool auxRelay13;           // RELAY_13
+    volatile bool auxRelay14;           // RELAY_14
 } TelemetryData;
 
 extern volatile TelemetryData telemetryData;
@@ -132,7 +176,7 @@ extern HardwareSerial RS485Serial;
 extern SemaphoreHandle_t serialMutex, dataMutex, idMutex;
 extern bool serialMutexInitialized, dataMutexInitialized, idMutexInitialized;
 
-extern CRGB leds[1];
+//extern CRGB leds[1];
 
 // === TWAI CONFIG ===
 extern twai_general_config_t g_config;
@@ -157,42 +201,43 @@ extern twai_filter_config_t twai_filter_config;
 
     // ====================== External Pins via 26-Pin Header (Hut V3) ======================
     // Type 2 Lock Control (DRV8871 H-Bridge)
-    #define TYPE2_LOCK_IN1          GPIO_NUM_18
-    #define TYPE2_LOCK_IN2          GPIO_NUM_21
-    #define TYPE2_FEEDBACK_PIN      GPIO_NUM_36   // Lock position feedback (input)
-    #define TYPE2_MANUAL_UNLOCK     GPIO_NUM_35   // Manual unlock button (input)
+    #define TYPE2_LOCK_IN1_PIN      GPIO_NUM_18  // CN1.23 DRV8871 IN1 (Lock)
+    #define TYPE2_LOCK_IN2_PIN      GPIO_NUM_21  // CN1.20 DRV8871 IN2 (Unlock)
+    #define TYPE2_FEEDBACK_PIN      GPIO_NUM_36  // CN1.11 Lock position feedback (input)
+    #define TYPE2_MANUAL_UNLOCK_PIN GPIO_NUM_35  // CN1.5 Manual unlock button (input)
 
     // Pump Control (Relay + PWM)
-    #define BAT_PUMP_RELAY          GPIO_NUM_37   // Battery pump power relay / MOSFET
-    #define BAT_PUMP_PWM            GPIO_NUM_38   // Battery pump speed control (PWM)
-    #define INV_PUMP_RELAY          GPIO_NUM_39   // Inverter pump power relay / MOSFET
-    #define INV_PUMP_PWM            GPIO_NUM_40   // Inverter pump speed control (PWM)
+    #define BAT_PUMP_RELAY_PIN      GPIO_NUM_37   // CN1.9 Battery pump power relay / MOSFET
+    #define BAT_PUMP_PWM_PIN        GPIO_NUM_38   // CN1.7 Battery pump speed control (PWM)
+    #define INV_PUMP_RELAY_PIN      GPIO_NUM_39   // CN1.6 Inverter pump power relay / MOSFET
+    #define INV_PUMP_PWM_PIN        GPIO_NUM_40   // CN1.12 Inverter pump speed control (PWM)
 
     // Auxiliary Outputs
-    #define PIEZO_PIN               GPIO_NUM_5    // Buzzer
-    #define FAN_RELAY_PIN           GPIO_NUM_17   // Cooling fan relay
-    #define WS2812_DATA_PIN         GPIO_NUM_16   // Addressable RGB LED (status LED)
+    #define PIEZO_PIN               GPIO_NUM_5    // CN1.16 Buzzer
+    #define FAN_RELAY_PIN           GPIO_NUM_17   // CN1.22 Cooling fan relay
+    #define WS2812_DATA_PIN         GPIO_NUM_16   // CN.13 Addressable RGB LED (status LED)
 
     // Dashboard Indicator LEDs
-    #define LED_CHECK_OIL           GPIO_NUM_14
-    #define LED_BATTERY             GPIO_NUM_15
+    #define LED_CHECK_OIL_PIN       GPIO_NUM_14    // CN1.14 Instrument Cluster "Check Oil" LED (via relay)
+    #define LED_BATTERY_PIN         GPIO_NUM_15    // CN1.15 Instrument Cluster "Battery" LED (via relay)
 
     // General Purpose Relays
-    #define RELAY_1                 GPIO_NUM_42
-    #define RELAY_2                 GPIO_NUM_41
-    #define RELAY_3                 GPIO_NUM_47
-    #define RELAY_4                 GPIO_NUM_4
+    #define RELAY_11_PIN             GPIO_NUM_42  // CN1.8 General Purpose Relay 11
+    #define RELAY_12_PIN             GPIO_NUM_41  // CN1.10 General Purpose Relay 12
+    #define RELAY_13_PIN             GPIO_NUM_47  // CN1.19 General Purpose Relay 13
+    #define RELAY_14_PIN             GPIO_NUM_4   // CN1.21 General Purpose Relay 14
 
     // General Purpose Input
-    #define INPUT_13                GPIO_NUM_3    // Example: Ignition (Kl.15)
+    #define INPUT_13_PIN             GPIO_NUM_3   // CN1.26 General Purpose Input  
 
+
+
+#elif defined(HARDWARE_TCAN485)
     // ====================== Aliases for backward compatibility ======================
     #define TYPE2_LOCK_PIN          TYPE2_LOCK_IN1
     #define TYPE2_UNLOCK_PIN        TYPE2_LOCK_IN2
     #define TYPE2_MANUAL_UNLOCK_PIN TYPE2_MANUAL_UNLOCK
-    #define LED_PIN                 WS2812_DATA_PIN   // External WS2812B FastLED 
-
-#elif defined(HARDWARE_TCAN485)
+    #define LED_PIN                 WS2812_DATA_PIN   // External WS2812B 
     // --- Legacy T-CAN485 Hardware Configuration (Hut V2) ---
     #define PIN_5V_EN           GPIO_NUM_16
     #define CAN_SE_PIN          GPIO_NUM_23
@@ -246,6 +291,10 @@ void updateWebDashboard();
 extern volatile TelemetryData telemetryData;
 extern bool demoModeActive;
 extern bool manualUnlockPressed;
-extern CRGB leds[1]; // For FastLED
+extern Freenove_ESP32_WS2812 led;
+// === MCP2515 Globals ===
+extern MCP2515 mcp2515;
+extern SemaphoreHandle_t mcpMutex;
+
 
 #endif

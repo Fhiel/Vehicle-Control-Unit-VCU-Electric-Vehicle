@@ -5,11 +5,8 @@
 
 #define PUMP_AFTERRUN_TIME 300000 // 5 minutes in milliseconds
 
-// Global relay state (Shadow Register)
-// Bit 0 = Relay 1, Bit 1 = Relay 2, etc.
-extern uint8_t relayShadow; 
 // Manual override bitmask for relays 1-4 (1 = Manual, 0 = Auto)
-extern uint8_t manualOverride;
+extern uint16_t manualOverride;
 
 /**
  * Updates the state of a specific relay channel (1-4)
@@ -40,5 +37,9 @@ void updateRelayAutomation();
  * Sends the current relayShadow state over the CAN bus.
  */
 void sendRelayCommand();
+
+void toggleOutput(uint8_t pin);
+void setOutput(uint8_t pin, bool state);
+void toggleRelay(uint8_t channel);
 
 #endif

@@ -28,20 +28,20 @@
 /**
  * @brief Translates raw MCU flags into a priority-based state ID.
  */
-uint8_t calculateMcuStateID(uint16_t flags);
+uint8_t calculateMcuStateID(uint16_t flags, bool valid);
 
 /**
  * @brief Translates IMD status into a dashboard-ready state ID.
  */
-uint8_t calculateImdStateID(uint16_t status);
+uint8_t calculateImdStateID(uint16_t status, bool valid);
 
 /**
  * @brief Translates VIFC status into a dashboard-ready state ID.
  */
-uint8_t calculateVifcStateID(uint16_t vifc);
+uint8_t calculateVifcStateID(uint16_t vifc, bool valid);
 
 /**
- * @brief Maps MCU gear flags to 'R', 'N', or 'D'.
+ * @brief Maps MCU gear flags to 'R', 'N', 'D' or '-'.
  */
 char calculateRndChar(uint16_t flags);
 
@@ -50,7 +50,7 @@ char calculateRndChar(uint16_t flags);
 /**
  * @brief Packs telemetry data into the standardized optimized payload.
  */
-void packOptimizedTelemetry(uint8_t* buf);
+bool packOptimizedTelemetry(uint8_t* buf);
 
 /**
  * @brief Sends telemetry via the appropriate hardware interface.
@@ -62,6 +62,7 @@ void packOptimizedTelemetry(uint8_t* buf);
 
 #ifdef HARDWARE_T2CAN
     void send_can_telemetry();
+    void receive_can_telemetry();
 #endif
 
 #endif // TELEMETRY_H

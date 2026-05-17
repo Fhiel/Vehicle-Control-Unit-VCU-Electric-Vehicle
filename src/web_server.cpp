@@ -6,13 +6,13 @@
  */
 
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-// CRITICAL: This flag tells ElegantOTA to use AsyncWebServer instead of WebServer
-#define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
-#include <ElegantOTA.h>
+#include <ESPAsyncWebServer.h>     // Erst diese
+#include <ElegantOTA.h>            // Dann ElegantOTA
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
+
+// CRITICAL: ElegantOTA soll AsyncWebServer benutzen
+#define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 
 #include "main.h"
 #include "web_server.h"
@@ -21,7 +21,9 @@
 #include "relay_control.h" 
 #include "lock_control.h"  
 #include "secrets.h"
-#include "pwa_data.h"
+
+#include <LittleFS.h>
+//#include "pwa_data.h"  replaced by manifest.json in LittleFS for better maintainability and separation of concerns
 
 // Global instances
 AsyncWebServer server(80);
@@ -64,17 +66,33 @@ void initWebServer() {
     webSocket.onEvent(onWsEvent);
     server.addHandler(&webSocket);
 
-    // Root route delivering the web_ui.h content
+    // Load the main dashboard page from LittleFS (index.html)
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(200, "text/html", index_html); 
+        request->send(LittleFS, "/index.html", "text/html"); 
     });
 
-    // PWA Manifest route
+    // Load Logo from LittleFS (logo.png)
+    server.on("/logo.png", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(LittleFS, "/logo.png", "image/png");
+    });
+
+    server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request){ request->send(LittleFS, "/style.css", "text/css"); });
+    server.on("/script.js", HTTP_GET, [](AsyncWebServerRequest *request){ request->send(LittleFS, "/script.js", "application/javascript"); });
+
+    // Load Manifest (PWA Metadata) from LittleFS (manifest.json)
     server.on("/manifest.json", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(200, "application/json", manifest_json);
+        request->send(LittleFS, "/manifest.json", "application/json");
     });
 
-    // Service Worker route (required for PWA installability/standalone mode)
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(204); 
+    });
+
+    server.on("/favicon.png", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LittleFS, "/favicon.png", "image/png");
+    });
+
+    // Service Worker route for PWA offline capabilities
     server.on("/sw.js", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(200, "application/javascript", 
         "self.addEventListener('install', (e) => { self.skipWaiting(); }); "
@@ -90,9 +108,28 @@ void initWebServer() {
         else Serial.println("[OTA] Update failed!");
     });
 
+    Serial.println("[NET] Waiting for network interfaces to stabilize...");
+    delay(1000); // 1 second delay to allow WiFi to initialize and mDNS to propagate
+
     // 6. Start Server
     server.begin();
     Serial.println("[NET] WebServer & OTA initialized");
+
+    // --- IP Addresses  ---
+    safe_printf("\n--- VCU NETWORKS ---\n");
+    safe_printf("  [AP]  S10e Dashboard IP: %s\n", WiFi.softAPIP().toString().c_str());
+    
+    uint32_t startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 4000) {
+        delay(100);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        safe_printf("  [STA] Garage/Home IP: %s\n", WiFi.localIP().toString().c_str());
+    } else {
+        safe_printf("  [STA] Garage/Home: Connecting... (IP follows when ready)\n");
+    }
+    safe_printf("---------------------\n\n");
 }
 
 /**
@@ -107,57 +144,82 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
             
             data[len] = 0; 
             const char* cmd = (const char*)data;
+            safe_printf("[WS RECV] Empfangener Befehl: %s\n", cmd);
 
-            // --- RELAY CONTROLS (Common to all Hardware) ---
-            if      (strcmp(cmd, "REL1_ON") == 0)   setRelayManual(1, true);
-            else if (strcmp(cmd, "REL1_OFF") == 0)  setRelayManual(1, false);
-            else if (strcmp(cmd, "REL1_AUTO") == 0) releaseToAuto(1);
+            // ====================== MANUAL OVERRIDES ======================
 
-            else if (strcmp(cmd, "REL2_ON") == 0)   setRelayManual(2, true);
-            else if (strcmp(cmd, "REL2_OFF") == 0)  setRelayManual(2, false);
-            else if (strcmp(cmd, "REL2_AUTO") == 0) releaseToAuto(2);
+            // Indicator LEDs
+            if      (strcmp(cmd, "LED_CHECK_OIL_TOGGLE") == 0) toggleOutput(LED_CHECK_OIL_PIN);
+            else if (strcmp(cmd, "LED_CHECK_OIL_AUTO") == 0)   setOutput(LED_CHECK_OIL_PIN, false);   // oder eigene Auto-Logik
 
-            else if (strcmp(cmd, "REL3_ON") == 0)   setRelayManual(3, true);
-            else if (strcmp(cmd, "REL3_OFF") == 0)  setRelayManual(3, false);
-            else if (strcmp(cmd, "REL3_AUTO") == 0) releaseToAuto(3);
+            else if (strcmp(cmd, "LED_BATTERY_TOGGLE") == 0)   toggleOutput(LED_BATTERY_PIN);
+            else if (strcmp(cmd, "LED_BATTERY_AUTO") == 0)     setOutput(LED_BATTERY_PIN, false);
 
-            else if (strcmp(cmd, "REL4_ON") == 0)   setRelayManual(4, true);
-            else if (strcmp(cmd, "REL4_OFF") == 0)  setRelayManual(4, false);
-            else if (strcmp(cmd, "REL4_AUTO") == 0) releaseToAuto(4);
+            // Alarm / Mute Steuerung
+            else if (strcmp(cmd, "PIEZO_TOGGLE") == 0) {
+                // Toggeln des Mute-Bits (Bit 1)
+                manualOverride ^= (1 << 1); 
+                safe_printf("[ALARM] Mute-condition changed! Current override register: 0x%X\n", manualOverride);
+            }
+            else if (strcmp(cmd, "PIEZO_AUTO") == 0) {
+                manualOverride &= ~(1 << 1); // deactivate manual override for alarm (Bit 1)
+            }
 
-            // --- CHARGE MODES ---
+            // Cooling
+            else if (strcmp(cmd, "FAN_TOGGLE") == 0)           toggleOutput(FAN_RELAY_PIN);
+            else if (strcmp(cmd, "FAN_AUTO") == 0)             setOutput(FAN_RELAY_PIN, false);
+
+            // Pumps
+            else if (strcmp(cmd, "BAT_PUMP_TOGGLE") == 0)      toggleOutput(BAT_PUMP_RELAY_PIN);
+            else if (strcmp(cmd, "BAT_PUMP_AUTO") == 0)        setOutput(BAT_PUMP_RELAY_PIN, false);
+
+            else if (strcmp(cmd, "INV_PUMP_TOGGLE") == 0)      toggleOutput(INV_PUMP_RELAY_PIN);
+            else if (strcmp(cmd, "INV_PUMP_AUTO") == 0)        setOutput(INV_PUMP_RELAY_PIN, false);
+
+            // General Purpose Relays
+            else if (strcmp(cmd, "REL11_TOGGLE") == 0) toggleOutput(RELAY_11_PIN);
+            else if (strcmp(cmd, "REL11_AUTO") == 0)   setOutput(RELAY_11_PIN, false);
+            else if (strcmp(cmd, "REL12_TOGGLE") == 0) toggleOutput(RELAY_12_PIN);
+            else if (strcmp(cmd, "REL12_AUTO") == 0)   setOutput(RELAY_12_PIN, false);
+            else if (strcmp(cmd, "REL13_TOGGLE") == 0) toggleOutput(RELAY_13_PIN);
+            else if (strcmp(cmd, "REL13_AUTO") == 0)   setOutput(RELAY_13_PIN, false);
+            else if (strcmp(cmd, "REL14_TOGGLE") == 0) toggleOutput(RELAY_14_PIN);
+            else if (strcmp(cmd, "REL14_AUTO") == 0)   setOutput(RELAY_14_PIN, false);
+
+            // VCU & Safety
+            else if (strcmp(cmd, "LOCK_REQ") == 0)           WITH_DATA_MUTEX({ telemetryData.shouldLock = true; });
+            else if (strcmp(cmd, "UNLOCK_REQ") == 0)         manualUnlockPressed = true;
+            else if (strcmp(cmd, "IMD_TEST_START") == 0)     WITH_DATA_MUTEX({ telemetryData.selfTestRequested = true; });
+
+            // Main Page Controls
             else if (strcmp(cmd, "MODE_DAILY") == 0) dailyModeActive = true;
             else if (strcmp(cmd, "MODE_TRIP") == 0)  dailyModeActive = false;
-            // ELCON Charger commands are sent via CANB (TWAI) - works on both boards!
             else if (strcmp(cmd, "CHARGE_STOP_REQ") == 0) sendElconCommand(true);
-
-            // --- LOCKING & DIAGNOSTICS ---
-            // These interact with the state machine in loop()
-            else if (strcmp(cmd, "LOCK_REQ") == 0)   WITH_DATA_MUTEX({ telemetryData.shouldLock = true; });
-            else if (strcmp(cmd, "UNLOCK_REQ") == 0) manualUnlockPressed = true;
-            else if (strcmp(cmd, "IMD_TEST_START") == 0) WITH_DATA_MUTEX({ telemetryData.selfTestRequested = true; });
-            else if (strcmp(cmd, "DEMO_TOGGLE") == 0) demoModeActive = !demoModeActive;
         }
     }
 }
 
 /**
  * @brief Telemetry Broadcast to Browser (ArduinoJson V7 compatible)
- */
+ * @note Cleaned up to perfectly match the web_ui.h keys and fixed BMS status logic.
+*/
 void updateWebDashboard() {
     if (webSocket.count() == 0) return;
-    doc.clear();
+
+    // ArduinoJson V7: Lokales Dokument leert sich automatisch und verhindert Heap-Müll
+    JsonDocument doc; 
 
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         // Group 1: MCU
         JsonObject mcu = doc["mcu"].to<JsonObject>();
         mcu["rpm"]   = (int32_t)telemetryData.motorRPM;
-        mcu["rpmV"]  = (bool)telemetryData.motorRPMValid; // Valid Flag
+        mcu["rpmV"]  = (bool)telemetryData.motorRPMValid;
         mcu["mt"]    = (int)telemetryData.motor_temp;
         mcu["mtV"]   = (bool)telemetryData.motorTempValid;
         mcu["it"]    = (int)telemetryData.mcu_temp;
         mcu["itV"]   = (bool)telemetryData.mcuTempValid;
         mcu["flt"]   = (int)telemetryData.mcuFaultLevel;
+        mcu["fltV"]  = (bool)telemetryData.mcuFaultLevelValid;
 
         // Group 2: BMS
         JsonObject bms = doc["bms"].to<JsonObject>();
@@ -167,47 +229,96 @@ void updateWebDashboard() {
         bms["aV"]    = (bool)telemetryData.bmsCurrentValid;
         bms["v"]     = (int)telemetryData.hv1Voltage;
         bms["vV"]    = (bool)telemetryData.hv1VoltageValid;
+        bms["st"]    = (int)telemetryData.bmsStatus;     
+        bms["stV"]   = (bool)telemetryData.bmsStatusValid;
 
         // Group 3: IMD
         JsonObject imd = doc["imd"].to<JsonObject>();
         imd["r"]     = (int)telemetryData.imdIsoR;
         imd["rV"]    = (bool)telemetryData.imdIsoRValid;
-        imd["st"]    = telemetryData.selfTestRunning ? 3 : 1; 
+        imd["st"]    = (int)telemetryData.imdStatus;     
+        imd["stV"]   = (bool)telemetryData.imdStatusValid;  
 
         // Group 4: VCU
         JsonObject vcu = doc["vcu"].to<JsonObject>();
         vcu["range"] = (int)estimatedRange;      
         vcu["trip"]  = !dailyModeActive;        
-        vcu["relO"]  = (int)relayShadow;
         vcu["mOv"]   = (int)manualOverride;
-        vcu["batP"] = (int)telemetryData.bat_pump_pwm;
-        vcu["invP"] = (int)telemetryData.inv_pump_pwm;
         vcu["chg"]   = (bool)telemetryData.is_charging;
         vcu["unl"]   = (bool)telemetryData.isUnLocking;
         vcu["err"]   = (bool)telemetryData.selfTestFailed;
         vcu["run"]   = (bool)telemetryData.selfTestRunning;
         vcu["soc"]   = (int)telemetryData.bmsSoC;
 
-        // Group 5: Proxy BMS (Hyper9 Interface)
+        // Group 5: Proxy BMS (Hyper9 Interface) - Logik auf echten GitHub-Status 3 korrigiert
         JsonObject proxy = doc["proxy"].to<JsonObject>();
-        bool cableConnected = (telemetryData.bmsStatus == 0x04 || telemetryData.is_charging);
+        bool cableConnected = (telemetryData.bmsStatus == BMS_STATUS_CHARGE || telemetryData.is_charging);
         bool systemFault = (telemetryData.selfTestResult != 0 || telemetryData.bmsHardwareFault);
         bool driveInhibit = (cableConnected || telemetryData.isLocked || systemFault);
 
-        proxy["soc"] = (int)((telemetryData.bmsSoC / 100.0f) * 32768.0f); // Raw SoC for Hyper9
-        proxy["inh"] = (bool)driveInhibit; // Drive Inhibit Bit
+        proxy["soc"] = (int)((telemetryData.bmsSoC / 100.0f) * 32768.0f); 
+        proxy["inh"] = (bool)driveInhibit; 
         proxy["lim"] = (telemetryData.bmsHighTempWarn) ? 50 : (telemetryData.bmsLowVoltageWarn ? 40 : 100);
         proxy["flt"] = (bool)systemFault;
+
+        // ==================== HARDWARE / IO (T-2CAN + Hut V3) ====================
+        JsonObject hw = doc["hw"].to<JsonObject>();
+
+        hw["5v_en"]          = (bool)telemetryData.fiveVEnabled;
+        hw["canb_stby"]      = (bool)telemetryData.canBStby;
+
+        hw["lock_in1"]       = (bool)telemetryData.lockIn1;
+        hw["lock_in2"]       = (bool)telemetryData.lockIn2;
+        hw["lock_fb"]        = (bool)telemetryData.lockFeedback;
+        hw["manual_unlock"]  = (bool)telemetryData.manualUnlockBtn;
+
+        // Keys exakt an das JS-Dashboard angepasst:
+        hw["bat_pump_relay"] = (bool)telemetryData.batPumpRelay;
+        hw["bat_pump_pwm"]   = (int)telemetryData.bat_pump_pwm;
+        hw["inv_pump_relay"] = (bool)telemetryData.invPumpRelay;
+        hw["inv_pump_pwm"]   = (int)telemetryData.inv_pump_pwm;
+        hw["fan_relay"]      = (bool)telemetryData.fanRelay;
+
+        hw["aux_rel11"]      = (bool)telemetryData.auxRelay11;
+        hw["aux_rel12"]      = (bool)telemetryData.auxRelay12;
+        hw["aux_rel13"]      = (bool)telemetryData.auxRelay13;
+        hw["aux_rel14"]      = (bool)telemetryData.auxRelay14;
+
+        hw["is_alarm"]       = (bool)telemetryData.isAlarm;   // Schaltet das Icon auf der Hauptseite ROT
+        hw["piezo"]          = (bool)telemetryData.isPiezoOn; // Zeigt auf der Expert-Seite, ob der Pin Lärm macht
+        hw["led_oil"]        = (bool)telemetryData.ledCheckOil;
+        hw["led_battery"]    = (bool)telemetryData.ledBattery;
+        hw["ws2812"]         = (int)telemetryData.ws2812Status;
+
+        hw["aux_in13"]       = (bool)telemetryData.auxinput13;
 
         xSemaphoreGive(dataMutex);
     }
 
+    // ====================================================================
+    // FINISH & SEND
+    // ====================================================================
+
+    // 1. Speicher-Überlauf fixen: Nutze sizeof(jsonBuffer), um exakt die deklarierte Größe zu löschen (1536)
+    memset(jsonBuffer, 0, sizeof(jsonBuffer));
+
+    size_t len = 0;
     #ifdef HARDWARE_T2CAN
-    // For T-2CAN (PSRAM pointer): Explicitly pass the pointer and the buffer size
-        size_t len = serializeJson(doc, jsonBuffer, 2048); 
+        // Auf dem T-2CAN nutzen wir den PSRAM-Puffer mit seiner definierten Größe
+        len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer)); 
     #else
-        // For TCAN485 (Fixed array): The compiler knows the size automatically
-        size_t len = serializeJson(doc, jsonBuffer);
+        // Auf dem festen Array ermittelt der Compiler die Größe automatisch
+        len = serializeJson(doc, jsonBuffer);
     #endif
-    webSocket.textAll(jsonBuffer, len);
+
+    // 2. Core-Panic verhindern: Nur senden, wenn die Puffer-Länge gültig ist UND Clients aktiv sind
+    if (len > 0 && len < sizeof(jsonBuffer)) {
+        // Sicherstellen, dass das webSocket-Objekt existiert und bereit ist
+        if (webSocket.count() > 0) {
+            webSocket.textAll(jsonBuffer, len);
+        }
+    } else {
+        // Optional: Fehler-Logging für ungültige Puffergrößen
+        Serial.printf("[NET] Warning: Invalid JSON buffer length (%d bytes). Data not sent.\n", len);
+    }
 }

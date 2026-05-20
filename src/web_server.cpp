@@ -133,95 +133,149 @@ void initWebServer() {
 }
 
 /**
- * @brief Handles incoming WebSocket commands from the dashboard.
+ * @brief Main WebSocket event routing dispatcher
+ * @note Handles incoming asynchronous control frames from client interfaces
  */
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, 
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
                void *arg, uint8_t *data, size_t len) {
     
-    if (type == WS_EVT_DATA) {
+    if (type == WS_EVT_CONNECT) {
+        Serial.printf("[WS] Client connection established from #%u\n", client->id());
+        updateWebDashboard();
+    } 
+    else if (type == WS_EVT_DISCONNECT) {
+        Serial.printf("[WS] Client connection severed from #%u\n", client->id());
+    } 
+    else if (type == WS_EVT_DATA) {
         AwsFrameInfo *info = (AwsFrameInfo*)arg;
         if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
             
-            data[len] = 0; 
-            const char* cmd = (const char*)data;
-            safe_printf("[WS RECV] Empfangener Befehl: %s\n", cmd);
+            char cmd[64];
+            size_t copyLen = (len < 63) ? len : 63;
+            memcpy(cmd, data, copyLen);
+            cmd[copyLen] = '\0'; 
 
-            // ====================== MANUAL OVERRIDES ======================
+            if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                
+                // --- LABOR SIMULATION ROUTINES ---
+                if (strcmp(cmd, "DEMO_MODE_ON") == 0) {
+                    demoModeActive = true;
+                    safe_printf("[WEBSERVER] Labor Dial-Demo view lock forced via dashboard.\n");
+                }
+                else if (strcmp(cmd, "DEMO_MODE_OFF") == 0) {
+                    demoModeActive = false;
+                    safe_printf("[WEBSERVER] Labor Dial-Demo view released.\n");
+                }
+                
+                // --- TRIP MANAGEMENT & DRIVE PROFILES ---
+                else if (strcmp(cmd, "MODE_DAILY") == 0) {
+                    dailyModeActive = true;
+                }
+                else if (strcmp(cmd, "MODE_TRIP") == 0) {
+                    dailyModeActive = false;
+                }
+                else if (strcmp(cmd, "CHARGE_STOP_REQ") == 0) {
+                    manualUnlockPressed = true; 
+                    safe_printf("[WEBSERVER] Charging cooldown sequence forced via dashboard interface.\n");
+                }
+                
+                // --- HARDWARE ACOUSTIC MUTING ---
+                else if (strcmp(cmd, "PIEZO_TOGGLE") == 0) {
+                    if (telemetryData.isAlarm) {
+                        alarmPiezoMuted = true;
+                        safe_printf("[NET] Alarm acoustics acknowledged by operator. Output muted.\n");
+                    }
+                }
+                
+                // --- DIGITAL OVERRIDES (MANUAL VS AUTOMATION TWIN-REGISTERS) ---
+                else if (strcmp(cmd, "OIL_MODE_MANUAL") == 0)   { manualOverride |= (1UL << OVR_BIT_CHECK_OIL); }
+                else if (strcmp(cmd, "OIL_MODE_AUTO") == 0)     { manualOverride &= ~(1UL << OVR_BIT_CHECK_OIL); }
+                else if (strcmp(cmd, "OIL_CMD_ON") == 0)        { manualOverride_Values |= (1UL << OVR_BIT_CHECK_OIL); }
+                else if (strcmp(cmd, "OIL_CMD_OFF") == 0)       { manualOverride_Values &= ~(1UL << OVR_BIT_CHECK_OIL); }
 
-            // Indicator LEDs
-            if      (strcmp(cmd, "LED_CHECK_OIL_TOGGLE") == 0) toggleOutput(LED_CHECK_OIL_PIN);
-            else if (strcmp(cmd, "LED_CHECK_OIL_AUTO") == 0)   setOutput(LED_CHECK_OIL_PIN, false);   // oder eigene Auto-Logik
+                else if (strcmp(cmd, "FAN_MODE_MANUAL") == 0)   { manualOverride |= (1UL << OVR_BIT_FAN); }
+                else if (strcmp(cmd, "FAN_MODE_AUTO") == 0)     { manualOverride &= ~(1UL << OVR_BIT_FAN); }
+                else if (strcmp(cmd, "FAN_CMD_ON") == 0)        { manualOverride_Values |= (1UL << OVR_BIT_FAN); }
+                else if (strcmp(cmd, "FAN_CMD_OFF") == 0)       { manualOverride_Values &= ~(1UL << OVR_BIT_FAN); }
 
-            else if (strcmp(cmd, "LED_BATTERY_TOGGLE") == 0)   toggleOutput(LED_BATTERY_PIN);
-            else if (strcmp(cmd, "LED_BATTERY_AUTO") == 0)     setOutput(LED_BATTERY_PIN, false);
+                else if (strcmp(cmd, "BAT_MODE_MANUAL") == 0)   { manualOverride |= (1UL << OVR_BIT_LED_BATT); }
+                else if (strcmp(cmd, "BAT_MODE_AUTO") == 0)     { manualOverride &= ~(1UL << OVR_BIT_LED_BATT); }
+                else if (strcmp(cmd, "BAT_CMD_ON") == 0)        { manualOverride_Values |= (1UL << OVR_BIT_LED_BATT); }
+                else if (strcmp(cmd, "BAT_CMD_OFF") == 0)       { manualOverride_Values &= ~(1UL << OVR_BIT_LED_BATT); }
 
-            // Alarm / Mute Steuerung
-            else if (strcmp(cmd, "PIEZO_TOGGLE") == 0) {
-                // Toggeln des Mute-Bits (Bit 1)
-                manualOverride ^= (1 << 1); 
-                safe_printf("[ALARM] Mute-condition changed! Current override register: 0x%X\n", manualOverride);
+                else if (strcmp(cmd, "PIEZO_MODE_MANUAL") == 0) { manualOverride |= (1UL << OVR_BIT_PIEZO); }
+                else if (strcmp(cmd, "PIEZO_MODE_AUTO") == 0)   { manualOverride &= ~(1UL << OVR_BIT_PIEZO); }
+                else if (strcmp(cmd, "PIEZO_CMD_ON") == 0)      { manualOverride_Values |= (1UL << OVR_BIT_PIEZO); }
+                else if (strcmp(cmd, "PIEZO_CMD_OFF") == 0)     { manualOverride_Values &= ~(1UL << OVR_BIT_PIEZO); }
+
+                else if (strcmp(cmd, "ALARM_MODE_MANUAL") == 0){ manualOverride |= (1UL << OVR_BIT_ALARM); }
+                else if (strcmp(cmd, "ALARM_MODE_AUTO") == 0)  { manualOverride &= ~(1UL << OVR_BIT_ALARM); }
+                else if (strcmp(cmd, "ALARM_CMD_ON") == 0)     { manualOverride_Values |= (1UL << OVR_BIT_ALARM); }
+                else if (strcmp(cmd, "ALARM_CMD_OFF") == 0)    { manualOverride_Values &= ~(1UL << OVR_BIT_ALARM); }
+
+                // --- COOLING LOOPS OPERATION MANAGEMENT (RELIABLE ANALOG VALUE TRACKING) ---
+                else if (strcmp(cmd, "INVP_MODE_MANUAL") == 0) { manualOverride |= (1UL << OVR_BIT_INV_PUMP); }
+                else if (strcmp(cmd, "INVP_MODE_AUTO") == 0)   { manualOverride &= ~(1UL << OVR_BIT_INV_PUMP); }
+                else if (strcmp(cmd, "INVP_CMD_OFF") == 0)     { manual_invPumpPwm = 0;   telemetryData.invPumpPwm = 0; }
+                else if (strcmp(cmd, "INVP_CMD_20") == 0)      { manual_invPumpPwm = 51;  telemetryData.invPumpPwm = 51; }
+                else if (strcmp(cmd, "INVP_CMD_80") == 0)      { manual_invPumpPwm = 204; telemetryData.invPumpPwm = 204; }
+
+                else if (strcmp(cmd, "BATP_MODE_MANUAL") == 0) { manualOverride |= (1UL << OVR_BIT_BAT_PUMP); }
+                else if (strcmp(cmd, "BATP_MODE_AUTO") == 0)   { manualOverride &= ~(1UL << OVR_BIT_BAT_PUMP); }
+                else if (strcmp(cmd, "BATP_CMD_OFF") == 0)     { manual_batPumpPwm = 0;   telemetryData.batPumpPwm = 0; }
+                else if (strcmp(cmd, "BATP_CMD_20") == 0)      { manual_batPumpPwm = 51;  telemetryData.batPumpPwm = 51; }
+                else if (strcmp(cmd, "BATP_CMD_80") == 0)      { manual_batPumpPwm = 204; telemetryData.batPumpPwm = 204; }
+
+                // --- HUT V3 AUXILIARY EXPANSION BUS CHANNELS ---
+                else if (strcmp(cmd, "REL11_MODE_MANUAL") == 0){ manualOverride |= (1UL << OVR_BIT_REL11); }
+                else if (strcmp(cmd, "REL11_MODE_AUTO") == 0)  { manualOverride &= ~(1UL << OVR_BIT_REL11); }
+                else if (strcmp(cmd, "REL11_CMD_ON") == 0)     { manualOverride_Values |= (1UL << OVR_BIT_REL11); }
+                else if (strcmp(cmd, "REL11_CMD_OFF") == 0)    { manualOverride_Values &= ~(1UL << OVR_BIT_REL11); }
+
+                else if (strcmp(cmd, "REL12_MODE_MANUAL") == 0){ manualOverride |= (1UL << OVR_BIT_REL12); }
+                else if (strcmp(cmd, "REL12_MODE_AUTO") == 0)  { manualOverride &= ~(1UL << OVR_BIT_REL12); }
+                else if (strcmp(cmd, "REL12_CMD_ON") == 0)     { manualOverride_Values |= (1UL << OVR_BIT_REL12); }
+                else if (strcmp(cmd, "REL12_CMD_OFF") == 0)    { manualOverride_Values &= ~(1UL << OVR_BIT_REL12); }
+
+                else if (strcmp(cmd, "REL13_MODE_MANUAL") == 0){ manualOverride |= (1UL << OVR_BIT_REL13); }
+                else if (strcmp(cmd, "REL13_MODE_AUTO") == 0)  { manualOverride &= ~(1UL << OVR_BIT_REL13); }
+                else if (strcmp(cmd, "REL13_CMD_ON") == 0)     { manualOverride_Values |= (1UL << OVR_BIT_REL13); }
+                else if (strcmp(cmd, "REL13_CMD_OFF") == 0)    { manualOverride_Values &= ~(1UL << OVR_BIT_REL13); }
+
+                else if (strcmp(cmd, "REL14_MODE_MANUAL") == 0){ manualOverride |= (1UL << OVR_BIT_REL14); }
+                else if (strcmp(cmd, "REL14_MODE_AUTO") == 0)  { manualOverride &= ~(1UL << OVR_BIT_REL14); }
+                else if (strcmp(cmd, "REL14_CMD_ON") == 0)     { manualOverride_Values |= (1UL << OVR_BIT_REL14); }
+                else if (strcmp(cmd, "REL14_CMD_OFF") == 0)    { manualOverride_Values &= ~(1UL << OVR_BIT_REL14); }
+
+                xSemaphoreGive(dataMutex);
             }
-            else if (strcmp(cmd, "PIEZO_AUTO") == 0) {
-                manualOverride &= ~(1 << 1); // deactivate manual override for alarm (Bit 1)
-            }
-
-            // Cooling
-            else if (strcmp(cmd, "FAN_TOGGLE") == 0)           toggleOutput(FAN_RELAY_PIN);
-            else if (strcmp(cmd, "FAN_AUTO") == 0)             setOutput(FAN_RELAY_PIN, false);
-
-            // Pumps
-            else if (strcmp(cmd, "BAT_PUMP_TOGGLE") == 0)      toggleOutput(BAT_PUMP_RELAY_PIN);
-            else if (strcmp(cmd, "BAT_PUMP_AUTO") == 0)        setOutput(BAT_PUMP_RELAY_PIN, false);
-
-            else if (strcmp(cmd, "INV_PUMP_TOGGLE") == 0)      toggleOutput(INV_PUMP_RELAY_PIN);
-            else if (strcmp(cmd, "INV_PUMP_AUTO") == 0)        setOutput(INV_PUMP_RELAY_PIN, false);
-
-            // General Purpose Relays
-            else if (strcmp(cmd, "REL11_TOGGLE") == 0) toggleOutput(RELAY_11_PIN);
-            else if (strcmp(cmd, "REL11_AUTO") == 0)   setOutput(RELAY_11_PIN, false);
-            else if (strcmp(cmd, "REL12_TOGGLE") == 0) toggleOutput(RELAY_12_PIN);
-            else if (strcmp(cmd, "REL12_AUTO") == 0)   setOutput(RELAY_12_PIN, false);
-            else if (strcmp(cmd, "REL13_TOGGLE") == 0) toggleOutput(RELAY_13_PIN);
-            else if (strcmp(cmd, "REL13_AUTO") == 0)   setOutput(RELAY_13_PIN, false);
-            else if (strcmp(cmd, "REL14_TOGGLE") == 0) toggleOutput(RELAY_14_PIN);
-            else if (strcmp(cmd, "REL14_AUTO") == 0)   setOutput(RELAY_14_PIN, false);
-
-            // VCU & Safety
-            else if (strcmp(cmd, "LOCK_REQ") == 0)           WITH_DATA_MUTEX({ telemetryData.shouldLock = true; });
-            else if (strcmp(cmd, "UNLOCK_REQ") == 0)         manualUnlockPressed = true;
-            else if (strcmp(cmd, "IMD_TEST_START") == 0)     WITH_DATA_MUTEX({ telemetryData.selfTestRequested = true; });
-
-            // Main Page Controls
-            else if (strcmp(cmd, "MODE_DAILY") == 0) dailyModeActive = true;
-            else if (strcmp(cmd, "MODE_TRIP") == 0)  dailyModeActive = false;
-            else if (strcmp(cmd, "CHARGE_STOP_REQ") == 0) sendElconCommand(true);
+            updateWebDashboard();
         }
     }
 }
 
 /**
  * @brief Telemetry Broadcast to Browser (ArduinoJson V7 compatible)
- * @note Cleaned up to perfectly match the web_ui.h keys and fixed BMS status logic.
-*/
+ */
 void updateWebDashboard() {
     if (webSocket.count() == 0) return;
 
-    // ArduinoJson V7: Lokales Dokument leert sich automatisch und verhindert Heap-Müll
     JsonDocument doc; 
 
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        // Group 1: MCU
+        // Group 1: MCU / Powertrain
         JsonObject mcu = doc["mcu"].to<JsonObject>();
         mcu["rpm"]   = (int32_t)telemetryData.motorRPM;
         mcu["rpmV"]  = (bool)telemetryData.motorRPMValid;
-        mcu["mt"]    = (int)telemetryData.motor_temp;
+        mcu["trq"]   = (float)telemetryData.motorTorque;
+        mcu["mt"]    = (int)telemetryData.motorTemp;
         mcu["mtV"]   = (bool)telemetryData.motorTempValid;
-        mcu["it"]    = (int)telemetryData.mcu_temp;
+        mcu["it"]    = (int)telemetryData.mcuTemp;
         mcu["itV"]   = (bool)telemetryData.mcuTempValid;
         mcu["flt"]   = (int)telemetryData.mcuFaultLevel;
         mcu["fltV"]  = (bool)telemetryData.mcuFaultLevelValid;
 
-        // Group 2: BMS
+        // Group 2: BMS & Labor Viewport Interceptor
         JsonObject bms = doc["bms"].to<JsonObject>();
         bms["soc"]   = (int)telemetryData.bmsSoC;
         bms["socV"]  = (bool)telemetryData.bmsSoCValid;
@@ -229,30 +283,45 @@ void updateWebDashboard() {
         bms["aV"]    = (bool)telemetryData.bmsCurrentValid;
         bms["v"]     = (int)telemetryData.hv1Voltage;
         bms["vV"]    = (bool)telemetryData.hv1VoltageValid;
-        bms["st"]    = (int)telemetryData.bmsStatus;     
+        
+        if (demoModeActive && telemetryData.bmsStatus == 0) {
+            bms["st"] = 2; 
+        } else {
+            bms["st"] = (int)telemetryData.bmsStatus;     
+        }
         bms["stV"]   = (bool)telemetryData.bmsStatusValid;
 
-        // Group 3: IMD
+        // Group 3: IMD / Insulation Monitor
         JsonObject imd = doc["imd"].to<JsonObject>();
         imd["r"]     = (int)telemetryData.imdIsoR;
         imd["rV"]    = (bool)telemetryData.imdIsoRValid;
         imd["st"]    = (int)telemetryData.imdStatus;     
         imd["stV"]   = (bool)telemetryData.imdStatusValid;  
 
-        // Group 4: VCU
+        // Group 4: VCU Control & Advanced Diagnostics
         JsonObject vcu = doc["vcu"].to<JsonObject>();
-        vcu["range"] = (int)estimatedRange;      
-        vcu["trip"]  = !dailyModeActive;        
-        vcu["mOv"]   = (int)manualOverride;
-        vcu["chg"]   = (bool)telemetryData.is_charging;
-        vcu["unl"]   = (bool)telemetryData.isUnLocking;
-        vcu["err"]   = (bool)telemetryData.selfTestFailed;
-        vcu["run"]   = (bool)telemetryData.selfTestRunning;
-        vcu["soc"]   = (int)telemetryData.bmsSoC;
+        vcu["range"]       = (int)estimatedRange;      
+        vcu["trip"]        = (bool)!dailyModeActive;
+        vcu["demo_active"] = (bool)demoModeActive;        
+        vcu["mOv"]         = (uint32_t)manualOverride; 
+        vcu["chg"]         = (bool)telemetryData.isCharging;
+        vcu["soc"]         = (int)telemetryData.bmsSoC;
+        vcu["err"]         = (bool)telemetryData.selfTestFailed;
+        vcu["run"]         = (bool)telemetryData.selfTestRunning;
+        
+        vcu["sysF"]  = (uint16_t)telemetryData.systemFlags;    
+        vcu["motF"]  = (uint16_t)telemetryData.motorFlags;     
+        vcu["ontm"]  = (uint8_t)telemetryData.systemKeyOntime; 
+        vcu["flgV"]  = (bool)telemetryData.mcuFlagsValid;
+        
+        vcu["lok"]   = (bool)telemetryData.isLocked;            
+        vcu["lkg"]   = (bool)telemetryData.isLocking;           
+        vcu["unl"]   = (bool)telemetryData.isUnLocking;         
+        vcu["stp"]   = (bool)telemetryData.manualStopRequested; 
 
-        // Group 5: Proxy BMS (Hyper9 Interface) - Logik auf echten GitHub-Status 3 korrigiert
+        // Group 5: Proxy BMS (Hyper9 Interface)
         JsonObject proxy = doc["proxy"].to<JsonObject>();
-        bool cableConnected = (telemetryData.bmsStatus == BMS_STATUS_CHARGE || telemetryData.is_charging);
+        bool cableConnected = (telemetryData.bmsStatus == 3 || telemetryData.isCharging); 
         bool systemFault = (telemetryData.selfTestResult != 0 || telemetryData.bmsHardwareFault);
         bool driveInhibit = (cableConnected || telemetryData.isLocked || systemFault);
 
@@ -261,22 +330,76 @@ void updateWebDashboard() {
         proxy["lim"] = (telemetryData.bmsHighTempWarn) ? 50 : (telemetryData.bmsLowVoltageWarn ? 40 : 100);
         proxy["flt"] = (bool)systemFault;
 
-        // ==================== HARDWARE / IO (T-2CAN + Hut V3) ====================
-        JsonObject hw = doc["hw"].to<JsonObject>();
+        // ====================================================================
+        // EXPANDED CHANNEL ROUTING ENGINE (MAN/AUTO PROTECTION INTERLOCK)
+        // ====================================================================
+        JsonObject ovr = doc["ovr"].to<JsonObject>();
+        
+        // Symmetrically serializes from the manual values mask to protect frontend states
+        auto packBinaryChannel = [&](JsonObject& parent, const char* key, uint8_t modeBit, bool hardwareState) {
+            JsonObject ch = parent[key].to<JsonObject>();
+            bool isManual = (manualOverride & (1UL << modeBit)) ? true : false;
+            ch["m"] = isManual ? 1 : 0;
+            
+            if (isManual) {
+                ch["s"] = (manualOverride_Values & (1UL << modeBit)) ? 1 : 0; // Reads straight from stable override mask
+            } else {
+                ch["s"] = hardwareState ? 1 : 0; 
+            }
+        };
 
+        auto packPumpChannel = [&](JsonObject& parent, const char* key, uint8_t modeBit, uint8_t hardwarePwmValue) {
+            JsonObject ch = parent[key].to<JsonObject>();
+            bool isManual = (manualOverride & (1UL << modeBit)) ? true : false;
+            ch["m"] = isManual ? 1 : 0;
+            
+            uint8_t dynamicPwmState = hardwarePwmValue;
+            if (isManual) {
+                // Read from our protected manual value buffers to shield the UI from background drift
+                if (modeBit == OVR_BIT_BAT_PUMP)      dynamicPwmState = manual_batPumpPwm;
+                else if (modeBit == OVR_BIT_INV_PUMP) dynamicPwmState = manual_invPumpPwm;
+            }
+            
+            if (dynamicPwmState == 204)     ch["s"] = 2; // BOOST
+            else if (dynamicPwmState == 51) ch["s"] = 1; // ECO
+            else                            ch["s"] = 0; // OFF
+        };
+
+        packBinaryChannel(ovr, "oil",  OVR_BIT_CHECK_OIL, telemetryData.ledCheckOil);
+        packBinaryChannel(ovr, "fan",  OVR_BIT_FAN,       telemetryData.fanRelay);
+        packBinaryChannel(ovr, "bat",  OVR_BIT_LED_BATT,  telemetryData.ledBattery);
+        
+        packPumpChannel(ovr,   "batp", OVR_BIT_BAT_PUMP,  telemetryData.batPumpPwm);
+        packPumpChannel(ovr,   "invp", OVR_BIT_INV_PUMP,  telemetryData.invPumpPwm);
+        
+        packBinaryChannel(ovr, "r11",  OVR_BIT_REL11,     telemetryData.auxRelay11);
+        packBinaryChannel(ovr, "r12",  OVR_BIT_REL12,     telemetryData.auxRelay12);
+        packBinaryChannel(ovr, "r13",  OVR_BIT_REL13,     telemetryData.auxRelay13);
+        packBinaryChannel(ovr, "r14",  OVR_BIT_REL14,     telemetryData.auxRelay14);
+
+        JsonObject chBuzz = ovr["buzz"].to<JsonObject>();
+        bool piezoManual = (manualOverride & (1UL << OVR_BIT_PIEZO)) ? true : false;
+        chBuzz["m"] = piezoManual ? 1 : 0;
+        chBuzz["s"] = piezoManual ? ((manualOverride_Values & (1UL << OVR_BIT_PIEZO)) ? 1 : 0) : (telemetryData.isPiezoOn ? 1 : 0);
+
+        JsonObject chAlarm = ovr["alarm"].to<JsonObject>();
+        bool alarmManual = (manualOverride & (1UL << OVR_BIT_ALARM)) ? true : false;
+        chAlarm["m"] = alarmManual ? 1 : 0;
+        chAlarm["s"] = alarmManual ? ((manualOverride_Values & (1UL << OVR_BIT_ALARM)) ? 1 : 0) : (telemetryData.isAlarm ? 1 : 0);
+        
+        // ==================== HARDWARE / PHYSICAL IO-PORTS (T-2CAN + Hut V3) ====================
+        JsonObject hw = doc["hw"].to<JsonObject>();
         hw["5v_en"]          = (bool)telemetryData.fiveVEnabled;
         hw["canb_stby"]      = (bool)telemetryData.canBStby;
-
         hw["lock_in1"]       = (bool)telemetryData.lockIn1;
         hw["lock_in2"]       = (bool)telemetryData.lockIn2;
         hw["lock_fb"]        = (bool)telemetryData.lockFeedback;
         hw["manual_unlock"]  = (bool)telemetryData.manualUnlockBtn;
 
-        // Keys exakt an das JS-Dashboard angepasst:
         hw["bat_pump_relay"] = (bool)telemetryData.batPumpRelay;
-        hw["bat_pump_pwm"]   = (int)telemetryData.bat_pump_pwm;
+        hw["bat_pump_pwm"]   = (int)telemetryData.batPumpPwm;
         hw["inv_pump_relay"] = (bool)telemetryData.invPumpRelay;
-        hw["inv_pump_pwm"]   = (int)telemetryData.inv_pump_pwm;
+        hw["inv_pump_pwm"]   = (int)telemetryData.invPumpPwm;
         hw["fan_relay"]      = (bool)telemetryData.fanRelay;
 
         hw["aux_rel11"]      = (bool)telemetryData.auxRelay11;
@@ -284,41 +407,17 @@ void updateWebDashboard() {
         hw["aux_rel13"]      = (bool)telemetryData.auxRelay13;
         hw["aux_rel14"]      = (bool)telemetryData.auxRelay14;
 
-        hw["is_alarm"]       = (bool)telemetryData.isAlarm;   // Schaltet das Icon auf der Hauptseite ROT
-        hw["piezo"]          = (bool)telemetryData.isPiezoOn; // Zeigt auf der Expert-Seite, ob der Pin Lärm macht
+        hw["is_alarm"]       = (bool)telemetryData.isAlarm;   
+        hw["piezo"]          = (bool)telemetryData.isPiezoOn; 
         hw["led_oil"]        = (bool)telemetryData.ledCheckOil;
         hw["led_battery"]    = (bool)telemetryData.ledBattery;
         hw["ws2812"]         = (int)telemetryData.ws2812Status;
-
         hw["aux_in13"]       = (bool)telemetryData.auxinput13;
 
         xSemaphoreGive(dataMutex);
     }
 
-    // ====================================================================
-    // FINISH & SEND
-    // ====================================================================
-
-    // 1. Speicher-Überlauf fixen: Nutze sizeof(jsonBuffer), um exakt die deklarierte Größe zu löschen (1536)
-    memset(jsonBuffer, 0, sizeof(jsonBuffer));
-
-    size_t len = 0;
-    #ifdef HARDWARE_T2CAN
-        // Auf dem T-2CAN nutzen wir den PSRAM-Puffer mit seiner definierten Größe
-        len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer)); 
-    #else
-        // Auf dem festen Array ermittelt der Compiler die Größe automatisch
-        len = serializeJson(doc, jsonBuffer);
-    #endif
-
-    // 2. Core-Panic verhindern: Nur senden, wenn die Puffer-Länge gültig ist UND Clients aktiv sind
-    if (len > 0 && len < sizeof(jsonBuffer)) {
-        // Sicherstellen, dass das webSocket-Objekt existiert und bereit ist
-        if (webSocket.count() > 0) {
-            webSocket.textAll(jsonBuffer, len);
-        }
-    } else {
-        // Optional: Fehler-Logging für ungültige Puffergrößen
-        Serial.printf("[NET] Warning: Invalid JSON buffer length (%d bytes). Data not sent.\n", len);
-    }
+    String responseString;
+    serializeJson(doc, responseString);
+    webSocket.textAll(responseString);
 }

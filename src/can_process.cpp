@@ -76,73 +76,123 @@ void map_can_to_telemetry(const twai_message_t& msg) {
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
     switch (msg.identifier) {
-        case 0x239: // MCU/Motor
-            if (dlc >= 8) {
-                uint16_t rpm = (msg.data[1] << 8) | msg.data[0];
-                int8_t motor_temp = (int8_t)msg.data[2] - 40;
-                int8_t mcu_temp = (int8_t)msg.data[3] - 40;
+        // =====================================================================
+        // SME AC-X1 INVERTER INTERFACE (TPDO 1 & TPDO 2)
+        // =====================================================================
 
-                telemetryData.motorRPM = (rpm <= MOTOR_RPM_MAX) ? rpm : 0;
-                telemetryData.motorRPMValid = (rpm <= MOTOR_RPM_MAX);
-                telemetryData.motor_temp = (motor_temp >= TEMP_MIN && motor_temp <= MOTOR_TEMP_MAX) ? motor_temp : 0;
-                telemetryData.motorTempValid = true;
-                telemetryData.mcu_temp = (mcu_temp >= TEMP_MIN && mcu_temp <= MCU_TEMP_MAX) ? mcu_temp : 0;
-                telemetryData.mcuTempValid = true;
-                telemetryData.mcuFaultLevel = msg.data[6];
-                telemetryData.mcuFaultLevelValid = true;
+        case 0x239: // MCU TPDO 1: Fast Dynamic Powertrain Metrics (100ms)
+            if (dlc >= 7) {
+                WITH_DATA_MUTEX({
+                    // 1. Motor Speed (RPM)
+                    telemetryData.motorRPM = (msg.data[1] << 8) | msg.data[0];
+                    telemetryData.motorRPMValid = (telemetryData.motorRPM <= MOTOR_RPM_MAX);
+
+                    // 2. Motor Output Torque (Scale: -32768 to 32767 map to -100% to +100%)
+                    int16_t raw_torque = (msg.data[3] << 8) | msg.data[2];
+                    telemetryData.motorTorque = (float)raw_torque / 327.68f; // Converts directly to % percentage
+                    
+                    // 3. Thermal Snapshot
+                    telemetryData.motorTemp = (int8_t)msg.data[4];
+                    telemetryData.motorTempValid = (telemetryData.motorTemp >= TEMP_MIN && telemetryData.motorTemp <= MOTOR_TEMP_MAX);
+                    
+                    telemetryData.mcuTemp = (int8_t)msg.data[5];
+                    telemetryData.mcuTempValid = (telemetryData.mcuTemp >= TEMP_MIN && telemetryData.mcuTemp <= MCU_TEMP_MAX);
+
+                    // 4. Central Fault Level
+                    telemetryData.mcuFaultLevel = msg.data[6];
+                    telemetryData.mcuFaultLevelValid = true;
+                });
             }
             break;
 
-        case 0x379: // BMS Info
-            if (dlc >= 5) { // Sicherstellen, dass Byte 4 (das 5. Byte) existiert
-                // Den exakten Statuswert (0-5) auslesen
-                telemetryData.bmsStatus = msg.data[4];
-                
-                // is_charging ist TRUE, wenn der Status exakt 3 (Charge) ist
-                telemetryData.is_charging = (telemetryData.bmsStatus == BMS_STATUS_CHARGE); 
-                
-                telemetryData.bmsStatusValid = true;
+        case 0x240: // MCU TPDO 2: Medium System State & Diagnostics (250ms)
+            if (dlc >= 5) {
+                WITH_DATA_MUTEX({
+                    // 1. System Flag Bitfield
+                    telemetryData.systemFlags = (msg.data[1] << 8) | msg.data[0];
+                    
+                    // 2. Motor Flag Bitfield (New Diagnostic Layer)
+                    telemetryData.motorFlags = (msg.data[3] << 8) | msg.data[2];
+                    
+                    // 3. System Lifetime Hours (Word)
+                    telemetryData.systemKeyOntime = (msg.data[5] << 8) | msg.data[4];
+                    
+                    telemetryData.mcuFlagsValid = true;
+                });
             }
             break;
 
-        case 0x356: // BMS: Current + Temp
-            if (dlc >= 6) {
-                int16_t raw_current = (msg.data[3] << 8) | msg.data[2];
-                telemetryData.bmsCurrent = raw_current / 10.0f;
-                telemetryData.bmsCurrentValid = (fabsf(telemetryData.bmsCurrent) <= BMS_CURRENT_MAX);
-                
-                int16_t raw_temp = (msg.data[5] << 8) | msg.data[4];
-                telemetryData.bat_temp = raw_temp / 10.0f;
-                telemetryData.batTempValid = (telemetryData.bat_temp >= TEMP_MIN);
+        // =====================================================================
+        // TESLA BMS V2 (0x355, 0x356, 0x375, 0x379)
+        // =====================================================================
+        case 0x379: // TeslaBMSV2 Core Status Info
+            if (msg.data_length_code >= 5) {
+                WITH_DATA_MUTEX({
+                    telemetryData.bmsStatus = msg.data[4];
+                    telemetryData.bmsStatusValid = true;
+                    telemetryData.isCharging = (telemetryData.bmsStatus == BMS_STATUS_CHARGE); 
+                    
+                    if (telemetryData.bmsStatus == BMS_STATUS_CHARGE) {
+                        telemetryData.bmsChargeAllowed = true;
+                    } else {
+                        telemetryData.bmsChargeAllowed = false;
+                    }
+                });
+            }
+            break;
+
+        case 0x356: // BMS Dynamic Metrics: Current + Temp
+            if (msg.data_length_code >= 6) {
+                WITH_DATA_MUTEX({
+                    // Systemspannung liegt primär auf der Isolationsüberwachung, 
+                    // Strom und Temperatur ziehen wir hier ab:
+                    int16_t raw_current = (msg.data[3] << 8) | msg.data[2];
+                    telemetryData.bmsCurrent = raw_current / 10.0f;
+                    telemetryData.bmsCurrentValid = (fabsf(telemetryData.bmsCurrent) <= BMS_CURRENT_MAX);
+                    
+                    int16_t raw_temp = (msg.data[5] << 8) | msg.data[4];
+                    telemetryData.batTemp = raw_temp / 10.0f;
+                    telemetryData.batTempValid = (telemetryData.batTemp >= TEMP_MIN && telemetryData.batTemp <= BMS_TEMP_MAX);
+                });
             }
             break;
 
         case 0x355: // BMS: SoC
-            if (dlc >= 2) {
-                uint16_t soc_raw = (msg.data[1] << 8) | msg.data[0];
-                telemetryData.bmsSoC = soc_raw / 10.0f;
-                telemetryData.bmsSoCValid = true;
+            if (msg.data_length_code >= 2) {
+                WITH_DATA_MUTEX({
+                    uint16_t soc_raw = (msg.data[1] << 8) | msg.data[0];
+                    telemetryData.bmsSoC = soc_raw / 10.0f;
+                    telemetryData.bmsSoCValid = true;
+                });
             }
             break;
+  
 
-        case 0x37: // IMD Data
+        // =====================================================================
+        // BENDER iso165-C1 (0x37, 0x22)
+        // =====================================================================    
+        case 0x37: // Cyclical IMD_Info (Once per second)
             if (dlc >= 6) {
+                // Little-endian extraction of isolation metrics and bitmasks
                 telemetryData.imdIsoR = (msg.data[1] << 8) | msg.data[0];
                 telemetryData.imdIsoRValid = true;
-                telemetryData.imdStatus = (msg.data[3] << 8) | msg.data[2];
+                
+                telemetryData.imdStatus = (msg.data[3] << 8) | msg.data[2]; // D_IMC_STATUS
                 telemetryData.imdStatusValid = true;
-                telemetryData.vifcStatus = (msg.data[5] << 8) | msg.data[4];
+                
+                telemetryData.vifcStatus = (msg.data[5] << 8) | msg.data[4]; // D_VIFC_STATUS
                 telemetryData.vifcStatusValid = true;
             }
             break;
 
-        case 0x22: // IMD Response to Self-Test or HV-Voltage Request
+        case 0x22: // Active Command-Response Interface
             if (dlc >= 5) {
-                uint16_t cmd = (msg.data[0] << 8) | msg.data[1];
-                if (cmd == 0x00D0) { // Response to Self-Test Start
-                    telemetryData.selfTestResult = msg.data[3];
+                uint16_t responseCmd = (msg.data[0] << 8) | msg.data[1];
+                
+                if (responseCmd == 0x00D0) { // Response to Self-Test Request
+                    telemetryData.selfTestResult = msg.data[2]; // Fixed: Byte 2 holds data parameter
                     telemetryData.selfTestResultValid = true;
-                } else if (cmd == 0x0036) { // Response to HV-Voltage Request
+                } else if (responseCmd == 0x0036) { // Response to High Voltage Bus Request
                     telemetryData.hv1Voltage = (msg.data[2] << 8) | msg.data[3];
                     telemetryData.hv1VoltageValid = true;
                 }

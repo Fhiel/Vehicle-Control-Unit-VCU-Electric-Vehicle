@@ -1,10 +1,3 @@
-/**
- * @file pump_control.cpp
- * @brief Thermal management for Battery and Inverter cooling loops.
- * @author Fhiel (X1/9e Project)
- * @license MIT
- */
-
 #define DEBUG
 #include "pump_control.h"
 #include "main.h"
@@ -12,74 +5,134 @@
 
 bool enablePumpDebug = false;
 
-/**
- * @brief Controls Inverter Pump speed based on MCU/Motor temperature.
- * Logic: Linear ramp between MIN_TEMP and MAX_TEMP.
- */
 void update_inv_pump(int8_t mcu_temp, bool valid) {
-    const int MIN_TEMP = 30;              // Start ramping up at 30°C
-    const int MAX_TEMP = MCU_TEMP_MAX;    // Full power at defined limit
-    const int MIN_DUTY = 51;              // 20% Minimum to prevent stalling
-    const int MAX_DUTY = 255;             // 100%
+    const int START_TEMP = 30;
+    const int STOP_TEMP  = 28;
+    const int MAX_TEMP   = MCU_TEMP_MAX;
+    
     int duty_cycle = 0;
+    bool relay_state = false;
+    bool fan_state = false;
 
-    if (!valid) {
-        duty_cycle = 0; // Failsafe: Off if no data (Relay 4 afterrun might still be active)
-    } else if (mcu_temp <= MIN_TEMP) {
-        duty_cycle = MIN_DUTY;
-    } else if (mcu_temp >= MAX_TEMP) {
-        duty_cycle = MAX_DUTY;
+    // =========================================================================
+    // A. INVERTER FLUID PUMP CONTROL (STRICT 1UL FIXED MASK: BITS 21 & 22)
+    // =========================================================================
+    if (manualOverride & (1UL << OVR_BIT_INV_PUMP)) {
+        // Override Active: Extract the 2-bit stage profile window safely
+        uint8_t p_stage = (manualOverride >> 21) & 0x03;
+        
+        if (p_stage == 1) {        // ECO Stage (20%)
+            relay_state = true;
+            duty_cycle = 51;      
+        } else if (p_stage == 2) { // BOOST Stage (80%)
+            relay_state = true;
+            duty_cycle = 204;     
+        } else {                   // OFF Stage
+            relay_state = false;
+            duty_cycle = 0;
+        }
     } else {
-        duty_cycle = (int)map(mcu_temp, MIN_TEMP, MAX_TEMP, MIN_DUTY, MAX_DUTY);
+        // AUTOMATION MODE: Closed-loop thermal tracking logic
+        if (!valid) {
+            relay_state = false;
+            duty_cycle = 0;
+        } else {
+            if (mcu_temp >= START_TEMP) relay_state = true;
+            else if (mcu_temp <= STOP_TEMP) relay_state = false;
+
+            if (!relay_state) duty_cycle = 0;
+            else if (mcu_temp <= START_TEMP) duty_cycle = 51;
+            else if (mcu_temp >= MAX_TEMP) duty_cycle = 255;
+            else duty_cycle = (int)map(mcu_temp, START_TEMP, MAX_TEMP, 51, 255);
+        }
     }
 
-    // Apply Hardware PWM
+    // CRITICAL FIX: Execute physical pin write OUTSIDE of the conditional loops!
+    digitalWrite(INV_PUMP_RELAY_PIN, relay_state ? HIGH : LOW);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)INV_PWM_CHANNEL, duty_cycle);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)INV_PWM_CHANNEL);
 
-    // Update Telemetry for Web Dashboard
-    WITH_DATA_MUTEX({ telemetryData.inv_pump_pwm = duty_cycle; });
-
-    // Debug output every 5 seconds
-    static unsigned long lastDebug = 0;
-    if (enablePumpDebug && (millis() - lastDebug >= 5000)) {
-        safe_printf("[PUMP] Inverter: %d°C, Duty: %d%%\n", mcu_temp, (duty_cycle * 100 / 255));
-        lastDebug = millis();
+    // =========================================================================
+    // B. RADIATOR COOLING FAN (STRICT 1UL FIXED MASK: STATE BIT 18)
+    // =========================================================================
+    if (manualOverride & (1UL << OVR_BIT_FAN)) {
+        // Override Active: Extract individual binary command from slot 18
+        fan_state = (manualOverride & (1UL << 18)) ? true : false;
+    } else {
+        // Automation Mode: Follow closed-loop threshold rules
+        const int FAN_START_TEMP = 45; const int FAN_STOP_TEMP = 40;
+        if (!valid) fan_state = false;
+        else if (mcu_temp >= FAN_START_TEMP) fan_state = true;
+        else if (mcu_temp <= FAN_STOP_TEMP) fan_state = false;
     }
+
+    // Direct physical actuator command execution
+    digitalWrite(FAN_RELAY_PIN, fan_state ? HIGH : LOW);
+
+    // Synchronize values safely back to the global telemetry tracking matrix
+    WITH_DATA_MUTEX({ 
+        telemetryData.invPumpRelay = (digitalRead(INV_PUMP_RELAY_PIN) == HIGH);
+        telemetryData.invPumpPwm   = duty_cycle; 
+        telemetryData.fanRelay     = (digitalRead(FAN_RELAY_PIN) == HIGH);  
+    });
 }
 
-/**
- * @brief Controls Battery Pump speed based on Tesla Module temperatures.
- * Logic: Tesla modules like it cool (20-35°C). Full speed at 50°C.
- */
 void update_bat_pump(float bat_temp, bool valid) {
-    const float MIN_TEMP = 20.0f;
-    const float MAX_TEMP = 45.0f;         // Full cooling earlier for battery longevity
-    const int MIN_DUTY = 51;              // 20% Minimum
-    const int MAX_DUTY = 255;
+    const float START_TEMP = 20.0f;
+    const float STOP_TEMP  = 18.0f;
+    const float MAX_TEMP   = 45.0f;
+    
     int duty_cycle = 0;
+    bool relay_state = false;
 
-    if (!valid) {
-        duty_cycle = 0;
-    } else if (bat_temp <= MIN_TEMP) {
-        duty_cycle = MIN_DUTY;
-    } else if (bat_temp >= MAX_TEMP) {
-        duty_cycle = MAX_DUTY;
+    // =========================================================================
+    // A. BATTERY FLUID PUMP CONTROL (STRICT 1UL FIXED MASK: BITS 19 & 20)
+    // =========================================================================
+    if (manualOverride & (1UL << OVR_BIT_BAT_PUMP)) {
+        // Override Active: Extract the 2-bit stage profile window safely
+        uint8_t p_stage = (manualOverride >> 19) & 0x03;
+        
+        if (p_stage == 1) {        // ECO Stage (20%)
+            relay_state = true;
+            duty_cycle = 51;
+        } else if (p_stage == 2) { // BOOST Stage (80%)
+            relay_state = true;
+            duty_cycle = 204;
+        } else {                   // OFF Stage
+            relay_state = false;
+            duty_cycle = 0;
+        }
     } else {
-        duty_cycle = (int)mapFloat(bat_temp, MIN_TEMP, MAX_TEMP, (float)MIN_DUTY, (float)MAX_DUTY);
+        // AUTOMATION MODE
+        if (!valid) {
+            relay_state = false;
+            duty_cycle = 0;
+        } else {
+            if (bat_temp >= START_TEMP) relay_state = true;
+            else if (bat_temp <= STOP_TEMP) relay_state = false;
+
+            if (!relay_state) duty_cycle = 0;
+            else if (bat_temp <= START_TEMP) duty_cycle = 51;
+            else if (bat_temp >= MAX_TEMP) duty_cycle = 255;
+            else duty_cycle = (int)mapFloat(bat_temp, START_TEMP, MAX_TEMP, 51.0f, 255.0f);
+        }
     }
 
-    // Apply Hardware PWM
+    // Unconditional hardware output sync block
+    digitalWrite(BAT_PUMP_RELAY_PIN, relay_state ? HIGH : LOW);
     ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)BAT_PWM_CHANNEL, duty_cycle);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)BAT_PWM_CHANNEL);
 
-    // Update Telemetry for Web Dashboard
-    WITH_DATA_MUTEX({ telemetryData.bat_pump_pwm = duty_cycle; });
+    WITH_DATA_MUTEX({ 
+        telemetryData.batPumpRelay = (digitalRead(BAT_PUMP_RELAY_PIN) == HIGH);
+        telemetryData.batPumpPwm   = duty_cycle; 
+    });
 
-    // Debug output every 5 seconds
+    // Debug output engine
     static unsigned long lastDebug = 0;
     if (enablePumpDebug && (millis() - lastDebug >= 5000)) {
-        safe_printf("[PUMP] Battery: %.1f°C, Duty: %d%%\n", bat_temp, (duty_cycle * 100 / 255));
+        safe_printf("[PUMP] Battery: %.1f°C | Relay: %s | Duty: %d%%\n", 
+                    bat_temp, relay_state ? "ON" : "OFF", (duty_cycle * 100 / 255));
         lastDebug = millis();
     }
 }

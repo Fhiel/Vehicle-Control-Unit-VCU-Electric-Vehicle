@@ -12,6 +12,9 @@ extern AsyncWebSocket webSocket;
  */
 void initWebServer();
 
+// Forward declaration of the asynchronous WebSocket event handler callback
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+
 /**
  * Gathers current telemetryData and broadcasts JSON via WebSocket
  */

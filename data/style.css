@@ -1,4 +1,9 @@
-/* --- IMPORTS & TOKENS --- */
+/* =========================================================================
+   X1/9e VCU DASHBOARD MASTER STYLESHEET
+   Project: BERTONE X1/9e Conversion
+   ========================================================================= */
+
+   /* --- IMPORTS & TOKENS --- */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;800&display=swap');    
 
 :root {
@@ -17,14 +22,29 @@
     --tesla-red: var(--warning-red);
 }
 
+/* --- BASE ELEMENT STYLING --- */
 body { 
     font-family: 'Montserrat', sans-serif; 
-    background: var(--bg-color); color: var(--text-main); 
-    margin: 0; padding: 0; display: flex; justify-content: center; min-height: 100vh;
+    background: var(--bg-color); 
+    color: var(--text-main); 
+    margin: 0; 
+    padding: 0; 
+    display: flex; 
+    justify-content: center; 
+    min-height: 100vh;
 }
 
-body:not(.show-expert) { overflow: hidden !important; position: fixed; width: 100%; height: 100%; }
-body.show-expert { overflow-y: auto !important; position: relative; }
+/* --- VIEWPORT VIEW CONSTRAINTS FOR MOBILE DASH S10e --- */
+body:not(.show-expert) { 
+    overflow: hidden !important; 
+    position: fixed; 
+    width: 100%; 
+    height: 100%; 
+}
+body.show-expert { 
+    overflow-y: auto !important; 
+    position: relative; 
+}
 
 #page-home { display: block !important; }
 #page-expert { display: none !important; }
@@ -33,51 +53,140 @@ body.show-expert #page-expert { display: block !important; }
 
 .page-section { width: 100%; min-height: 100vh; }
 
+/* --- STRUCTURAL LAYOUT CONTAINERS --- */
 .dashboard-wrapper {
-    margin-top: 0; padding-top: 70px; display: flex; flex-direction: column; 
-    width: 100%; max-width: 1300px; padding-left: 10px; padding-right: 10px; padding-bottom: 15px;
-    box-sizing: border-box; gap: 5px;
+    margin-top: 0; 
+    padding-top: 68px; 
+    display: flex; 
+    flex-direction: column; 
+    width: 100%; 
+    max-width: 1300px; 
+    padding-left: 10px; 
+    padding-right: 10px; 
+    padding-bottom: 5px;
+    box-sizing: border-box; 
+    gap: 0px;
 }
 
+/* THE PIXEL-PERFECT ANCHOR MATRIX 
+   Forces the top slot to have an immutable, fixed height footprint on the S10e screen.
+*/
+.top-slot-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    height: 94px;            /* The precise structural height required for the instruments */
+    margin-bottom: 14px;     /* Fixed, locked gutter spacing directly above the icon grid */
+    box-sizing: border-box;
+}
+
+/* Overlays both structural views into the exact same spatial grid boundaries */
+#ui-profile-manager, 
+#ui-kinetic-gauges {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0 !important;   /* Strips out drifting layout bounds */
+}
+
+/* --- FIX DESIGN HEADER NAVIGATION BAR --- */
 .header-bar {
-    position: fixed; top: 0; left: 0; right: 0; height: 64px; z-index: 10000;
-    background-color: #000; border-bottom: 1px solid var(--border-ui);
-    margin: 0 !important; padding: 0 10px; box-sizing: border-box; display: flex; align-items: flex-start;
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    right: 0; 
+    height: 64px; 
+    z-index: 10000;
+    background-color: #000; 
+    border-bottom: 1px solid var(--border-ui);
+    margin: 0 !important; 
+    padding: 0 10px; 
+    box-sizing: border-box; 
+    display: flex; 
+    align-items: flex-start;
 }
 
 .logo-area { z-index: 2; display: flex; margin: 0; padding: 0; }
 .logo-img { height: 50px; width: auto; display: block; margin-left: 0; cursor: pointer; }
 
 #status-tag { 
-    cursor: pointer; position: absolute; left: 50%; top: 0px; transform: translateX(-50%); 
-    height: 60px; display: flex; align-items: flex-start; padding-top: 0px;
-    font-size: 1.0em; font-weight: bold; letter-spacing: 2px; color: var(--bertone-gold); 
-    z-index: 1001; text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    cursor: pointer; 
+    position: absolute; 
+    left: 50%; 
+    top: 0px; 
+    transform: translateX(-50%); 
+    height: 60px; 
+    display: flex; 
+    align-items: flex-start; 
+    padding-top: 0px;
+    font-size: 1.0em; 
+    font-weight: bold; 
+    letter-spacing: 2px; 
+    color: var(--bertone-gold); 
+    z-index: 1001; 
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
 }
 #status-tag:active { color: #fff; }
 
-.range-box { 
-    cursor: pointer; user-select: none; text-align: right; display: flex; flex-direction: column; 
-    align-items: flex-end; position: absolute; right: 12px; top: 4px; height: 55px; z-index: 10; min-width: 120px;
+/* Inline alignment modification for the condensed header metrics */
+.range-box {
+    cursor: pointer; 
+    user-select: none; 
+    display: flex; 
+    flex-direction: row;     /* Changes column flow into inline tracking */
+    align-items: baseline;   /* Bases characters on the same typographical baseline */
+    justify-content: flex-end;
+    position: absolute; 
+    right: 12px; 
+    top: 10px;               /* Centered vertical positioning for single row flow */
+    height: 45px; 
+    z-index: 10; 
+    min-width: 140px;
+    gap: 2px;                /* Consistent spacing between value and trailing unit */
 }
 .range-val { font-size: 3.2em; font-weight: 900; line-height: 0.8; } 
-.range-unit { font-size: 0.7em; color: var(--text-dim); text-transform: none; }
+/* Fine-tune the unit scale scaling */
+.range-unit { 
+    font-size: 1.1em;        /* Increased slightly to balance with large metric numerals */
+    font-weight: 800;
+    color: var(--text-dim); 
+    text-transform: none; 
+}
 
 .control-row { display: flex; justify-content: center; margin: 2px 0; }
 
+/* --- TRIP / CHARGE MANAGEMENT GRID --- */
 .mode-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; max-width: 100%; 
-    margin: 0 auto 20px auto !important;
+    display: grid; 
+    grid-template-columns: repeat(3, 1fr); 
+    gap: 15px; 
+    width: 100%; 
+    max-width: 100%; 
 }
 
 .mode-card {
-    background: var(--card-bg); border: 2px solid var(--border-ui); border-radius: 8px; height: 55px; 
-    display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;
+    background: var(--card-bg); 
+    border: 2px solid var(--border-ui); 
+    border-radius: 8px; 
+    height: 100%;            /* Stretches safely inside the grid boundaries */
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    cursor: pointer; 
+    transition: 0.2s;
+    box-sizing: border-box;
 }
 
 .mode-label { 
-    font-size: 0.55em; font-weight: 800; color: #222; text-transform: uppercase; letter-spacing: 0.8px;
-    margin-top: 4px; transition: color 0.3s;
+    font-size: 0.55em; 
+    font-weight: 800; 
+    color: #222; 
+    text-transform: uppercase; 
+    letter-spacing: 0.8px;
+    margin-top: 4px; 
+    transition: color 0.3s;
 }
 
 .mode-active { border-color: #555 !important; }
@@ -90,40 +199,80 @@ body.show-expert #page-expert { display: block !important; }
 .bolt-card { cursor: pointer; border-color: var(--border-ui); }
 .bolt-card .icon-svg { fill: #444; }
 
-.icon-grid { display: grid; width: 100%; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 0 auto 20px !important; }
-
-.icon-card { 
-    background: var(--card-bg); border: 2px solid var(--border-ui); border-radius: 8px; height: 55px; 
-    display: flex; flex-direction: column; align-items: center; justify-content: center; 
-    transition: 0.2s; cursor: default; padding: 0; box-sizing: border-box;
+/* --- PERIPHERAL STATUS INDICATOR SYSTEM --- */
+.icon-grid { 
+    display: grid; 
+    width: 100%; 
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 12px; 
+    margin: 0 auto 14px !important; /* Perfect, matching 14px gutter right above lower row */
 }
 
-.icon-svg { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; fill: #ffffff; }
+.icon-card { 
+    background: var(--card-bg); 
+    border: 2px solid var(--border-ui); 
+    border-radius: 8px; 
+    height: 46px; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    transition: 0.2s; 
+    cursor: default; 
+    padding: 0; 
+    box-sizing: border-box;
+}
+
+/* FIXED TYPO: Restores true square sizing proportions to clear clipping limits */
+.icon-svg { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; fill: #ffffff; }
 .icon-svg svg { width: 100%; height: 100%; }
 
 .card-on-red { 
-    background-color: #b3101c !important; /* Ein sattes, deckendes Dunkelrot */
-    border-color: #ff3344 !important;     /* Ein heller, scharfer Rahmen */
-    color: #ffffff;                       /* Textfarbe weiß */
+    background-color: #b3101c !important; 
+    border-color: #ff3344 !important;     
+    color: #ffffff;                       
     box-shadow: 0 0 15px rgba(232, 18, 36, 0.6); 
 }
 .card-on-green { 
-    background-color: #1e823b !important; /* Ein knackiges, deckendes Renn-Grün */
-    border-color: #3ddb67 !important;     /* Ein heller, leuchtender Rahmen */
-    color: #ffffff;                       /* Textfarbe weiß */
+    background-color: #1e823b !important; 
+    border-color: #3ddb67 !important;     
+    color: #ffffff;                       
     box-shadow: 0 0 15px rgba(61, 219, 103, 0.5); 
 }
-/* Das stellt sicher, dass das eingebettete SVG-Symbol IMMER reinweiß bleibt */
+
 .card-on-red .icon-svg svg, 
 .card-on-green .icon-svg svg { 
     fill: #ffffff !important; 
     opacity: 1 !important; 
 }
 
+/* =========================================================================
+   ANALOG DIAL AND TICK CONFIGURATIONS (UNIVERSAL HARMONIZED INTERFACE)
+   ========================================================================= */
 .main-diag { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.diag-box { background: rgba(255,255,255,0.02); border: 2px solid rgba(0, 230, 138, 0.35); padding: 8px 10px 10px 10px; border-radius: 6px; box-shadow: 0 0 14px rgba(0, 230, 138, 0.2); }
-.diag-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; min-height: 32px; }
+/* --- COMPACT AUTOMOTIVE INSTRUMENT BOXES --- */
+.diag-box { 
+    background: rgba(255,255,255,0.02); 
+    border: 2px solid rgba(0, 230, 138, 0.35); 
+    padding: 5px 10px 6px 10px; /* Reduced vertical padding from 8px/10px to flatten containers */
+    border-radius: 6px; 
+    box-shadow: 0 0 14px rgba(0, 230, 138, 0.2); 
+}
+.diag-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 2px;      /* Halved from 6px to pull the scale closer to labels */
+    min-height: 24px;        /* Condensed from 32px */
+}
 .diag-label { font-size: 0.68em; color: var(--bertone-gold); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 800; line-height: 1; }
+
+.gauge-wrapper { 
+    position: relative; 
+    height: 46px;            /* Slashed from 52px to compress internal dead space */
+    width: 100%; 
+    margin: 2px 0 2px 0;     /* Trimmed default margin spaces */
+}
 
 .scale-container { 
     position: relative; 
@@ -134,12 +283,12 @@ body.show-expert #page-expert { display: block !important; }
     display: flex; 
     align-items: flex-end; 
     justify-content: space-between; 
-    /* HIER IST DIE MAGIE: 6% Platz links und rechts VOR und HINTER den Strichen */
     padding: 0 6% 0 6%; 
     box-sizing: border-box; 
     margin: 0 auto !important; 
 }
 
+/* --- GRADUATED CHROMATIC TICK ARRAYS --- */
 .tick { background: #fff; width: 1px; height: 18px; opacity: 0.8; }
 .tick.thick { width: 3px; height: 22px; opacity: 1; }
 .tick.gold { background: var(--bertone-gold); }
@@ -174,54 +323,65 @@ body.show-expert #page-expert { display: block !important; }
     z-index: 1; 
 }
 
+/* --- HARMONIZED SCALE LABELS (CENTERED TRIPLE BOUND) --- */
 .scale-labels { 
     position: relative; 
     z-index: 5; 
     display: flex; 
     justify-content: space-between; 
-    /* Das zwingt die Box der Zahlen auf exakt dieselbe Breite wie die Striche! */
     padding: 0 6% 0 6%;          
     margin-top: 2px; 
     box-sizing: border-box;
-}
-/* Perfekte optische Zentrierung der Zahlen direkt unter den Hauptstrichen */
-.scale-labels span:nth-child(1) { 
-    /* Linke Zahl (0 / 50k) -> Schiebt sich minimal nach links, damit sie mittig unter dem Strich steht */
-    transform: translateX(-50%); 
+    height: 14px;
 }
 
-.scale-labels span:nth-child(2) { 
-    /* Mittlere Zahl (50 / 1k) -> Steht absolut mittig */
-    text-align: center;
+/* Balanced standard layouts for symmetrical instruments (INV & ISO-R) */
+.scale-labels:not(.kinetic-labels) span:text-child(1) { transform: translateX(-50%); }
+.scale-labels:not(.kinetic-labels) span:nth-child(2) { text-align: center; }
+.scale-labels:not(.kinetic-labels) span:nth-child(3) { transform: translateX(50%); }
+
+/* NEW FEATURE: Absolute layout anchors for the side-by-side asymmetric traction elements */
+.scale-labels.kinetic-labels {
+    display: block;
+    position: relative;
+    padding: 0;
+}
+.scale-labels.kinetic-labels span {
+    position: absolute;
+    transform: translateX(-50%);
 }
 
-.scale-labels span:nth-child(3) { 
-    /* Rechte Zahl (95 / 0) -> Schiebt sich minimal nach rechts, damit sie mittig unter dem letzten Strich steht */
-    transform: translateX(50%); 
-}
+/* Dynamic positioning based exactly on physical viewport grid widths (6% start to 94% end) */
+#box-current .scale-labels.kinetic-labels span:nth-child(1) { left: 6.00%; }  /* -250A */
+#box-current .scale-labels.kinetic-labels span:nth-child(2) { left: 39.85%; } /* 0A */
+#box-current .scale-labels.kinetic-labels span:nth-child(3) { left: 94.00%; } /* +400A */
+
+#box-torque .scale-labels.kinetic-labels span:nth-child(1) { left: 18.50%; } /* -75% */
+#box-torque .scale-labels.kinetic-labels span:nth-child(2) { left: 56.28%; } /* 0% */
+#box-torque .scale-labels.kinetic-labels span:nth-child(3) { left: 94.00%; } /* +100% */
 
 .scale-val { color: var(--bertone-gold); font-size: 1.0em; font-weight: 800; }
-.gauge-wrapper { position: relative; height: 52px; width: 100%; margin: 4px 0 6px 0; }
 
+/* --- MASTER CHASSIS PHYSIC NEEDLE VECTOR --- */
 .needle { 
     position: absolute; 
     top: 3px; 
     left: 0; 
-    width: 6px;                  /* Ein Pixel breiter für bessere Sichtbarkeit */
-    height: 43px; 
-    /* Ein satterer Farbverlauf, der in der Mitte richtig reinweiß strahlt */
+    width: 6px;                  
+    height: 37px;            /* Decreased from 43px to match the flatter layout profile */
     background: linear-gradient(to right, #cccccc 0%, #ffffff 40%, #ffffff 60%, #cccccc 100%); 
-    /* Ein dunkler Rand, damit sich die Nadel von der Skala und dem Glow abhebt */
     border: 1px solid #111111;   
     border-radius: 2px; 
-    /* Ein dezenterer, aber knackigerer Glow, der sie nicht verschluckt */
-    box-shadow: 0 0 6px rgba(0, 230, 138, 0.8); /* Cooles Instrumenten-Grün-Glow passend zum Auto! */
+    box-shadow: 0 0 6px rgba(0, 230, 138, 0.8); 
     transition: left 0.3s ease-out; 
-    z-index: 9999;               /* Absolut sicherstellen, dass sie über allem steht */
+    z-index: 9999;               
 }
 
 .val-top { font-family: monospace; font-size: 1.22em; font-weight: 800; color: var(--text-main); line-height: 1; }
 
+/* =========================================================================
+   ADVANCED ENGINEERING INTERFACE LAYOUT (EXPERT PAGE PANEL)
+   ========================================================================= */
 .expert-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 5px; border-top: 1px solid var(--border-ui); padding-top: 20px; }
 .expert-box { background: var(--card-bg); border: 1px solid #222; padding: 15px; border-radius: 15px; }
 .expert-box h2 { font-size: 0.75em; color: var(--bertone-gold); text-transform: uppercase; margin: 0 0 10px 0; border-bottom: 1px solid #1a1a1a; padding-bottom: 6px; }
@@ -230,15 +390,99 @@ body.show-expert #page-expert { display: block !important; }
 .val { font-weight: bold; color: #fff; }
 .unit { color: var(--text-dim); margin-left: 3px; font-size: 0.75em; }
 
-/* +50% HEIGHT BUTTONS FOR S10e */
+/* --- AUTOMOTIVE GRADE CAPSULE TOGGLE SLIDERS --- */
+.modern-auto-switch {
+    position: relative;
+    display: inline-block;
+    width: 70px; 
+    height: 32px; 
+}
+
+.modern-auto-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.modern-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #E6E6E6; 
+    transition: .3s;
+    border-radius: 16px;
+    border: 1px solid #CCCCCC;
+}
+
+.modern-slider:before {
+    position: absolute;
+    content: "";
+    height: 28px;
+    width: 28px;
+    left: 2px;
+    bottom: 1px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    z-index: 2; 
+}
+
+.modern-auto-switch input:checked + .modern-slider {
+    background-color: #2ED1A2; 
+    border-color: #2ED1A2;
+}
+
+.modern-auto-switch input:checked + .modern-slider:before {
+    transform: translateX(36px); 
+}
+
+.modern-slider:after {
+    content: "AUTO"; 
+    color: #666666;
+    position: absolute;
+    top: 50%;
+    right: 10px; 
+    transform: translateY(-50%);
+    font-size: 10px;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+    transition: opacity .15s ease;
+    z-index: 1;
+}
+
+.modern-auto-switch input:checked + .modern-slider:after {
+    content: "MAN"; 
+    color: white;
+    left: 10px;
+    right: auto;
+}
+
+.modern-label {
+    font-size: 0.85em;
+    font-weight: bold;
+    width: 90px;
+}
+
+/* --- HIGH HEIGHT INTERACTIVE LAB ACTION INTERFACE BUTTONS --- */
 #page-expert button {
-    background: #111; color: #eee; border: 1px solid #444;
-    padding: 16px 8px !important; border-radius: 6px; font-size: 1.1em !important;
-    font-weight: bold; cursor: pointer; transition: 0.2s;
-    min-height: 52px; display: flex; align-items: center; justify-content: center;
+    background: #111; 
+    color: #eee; 
+    border: 1px solid #444;
+    padding: 16px 8px !important; 
+    border-radius: 6px; 
+    font-size: 1.1em !important;
+    font-weight: bold; 
+    cursor: pointer; 
+    transition: 0.2s;
+    min-height: 52px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
 }
 #page-expert button:hover { background: #222; border-color: var(--instrument-green); }
 
+/* --- PERIPHERAL RUNTIME KEYFRAME ACTIONS --- */
 .fan-spin { display: inline-block; animation: spin 2.5s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 

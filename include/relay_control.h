@@ -5,8 +5,6 @@
 
 #define PUMP_AFTERRUN_TIME 300000 // 5 minutes in milliseconds
 
-// Manual override bitmask for relays 1-4 (1 = Manual, 0 = Auto)
-extern uint16_t manualOverride;
 
 /**
  * Updates the state of a specific relay channel (1-4)
@@ -38,8 +36,20 @@ void updateRelayAutomation();
  */
 void sendRelayCommand();
 
+/**
+ * Universal Hardware Pin Accessors
+ * Wrapped in extern "C" to guarantee cross-module linker compatibility
+ */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void toggleOutput(uint8_t pin);
 void setOutput(uint8_t pin, bool state);
 void toggleRelay(uint8_t channel);
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif // RELAY_CONTROL_H

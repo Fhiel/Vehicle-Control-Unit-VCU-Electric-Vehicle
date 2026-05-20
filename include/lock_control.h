@@ -8,7 +8,8 @@ typedef enum {
     LOCK_LOCKING,
     LOCK_LOCKED,
     LOCK_UNLOCKING,
-    LOCK_UNLOCKED
+    LOCK_UNLOCKED,
+    LOCK_STOPPING_CHARGE
 } LockState;
 
 // Motor-Steuerung

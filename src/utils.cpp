@@ -1,3 +1,11 @@
+/**
+ * @file utils.cpp
+ * @brief Utility functions for checksum calculation, value mapping, and RS485 packet logging.
+ * @author Fhiel (X1/9e Project)
+ * @license MIT
+ */
+
+
 //utils.cpp
 #define DEBUG
 #include "utils.h"

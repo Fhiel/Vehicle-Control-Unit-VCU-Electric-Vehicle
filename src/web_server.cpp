@@ -400,19 +400,37 @@ void updateWebDashboard() {
         hw["bat_pump_pwm"]   = (int)telemetryData.batPumpPwm;
         hw["inv_pump_relay"] = (bool)telemetryData.invPumpRelay;
         hw["inv_pump_pwm"]   = (int)telemetryData.invPumpPwm;
-        hw["fan_relay"]      = (bool)telemetryData.fanRelay;
+
+        // SANITIZED HARDWARE SYNC: Ensure feedback registers read from the active manual choices
+        hw["fan_relay"]      = (manualOverride & (1UL << OVR_BIT_FAN)) ? 
+                               ((manualOverride_Values & (1UL << OVR_BIT_FAN)) ? true : false) : 
+                               (bool)telemetryData.fanRelay;
 
         hw["aux_rel11"]      = (bool)telemetryData.auxRelay11;
         hw["aux_rel12"]      = (bool)telemetryData.auxRelay12;
         hw["aux_rel13"]      = (bool)telemetryData.auxRelay13;
         hw["aux_rel14"]      = (bool)telemetryData.auxRelay14;
 
-        hw["is_alarm"]       = (bool)telemetryData.isAlarm;   
-        hw["piezo"]          = (bool)telemetryData.isPiezoOn; 
-        hw["led_oil"]        = (bool)telemetryData.ledCheckOil;
-        hw["led_battery"]    = (bool)telemetryData.ledBattery;
+        hw["is_alarm"]       = (manualOverride & (1UL << OVR_BIT_ALARM)) ? 
+                               ((manualOverride_Values & (1UL << OVR_BIT_ALARM)) ? true : false) : 
+                               (bool)telemetryData.isAlarm;   
+                               
+        hw["piezo"]          = (manualOverride & (1UL << OVR_BIT_PIEZO)) ? 
+                               ((manualOverride_Values & (1UL << OVR_BIT_PIEZO)) ? true : false) : 
+                               (bool)telemetryData.isPiezoOn; 
+                               
+        hw["led_oil"]        = (manualOverride & (1UL << OVR_BIT_CHECK_OIL)) ? 
+                               ((manualOverride_Values & (1UL << OVR_BIT_CHECK_OIL)) ? true : false) : 
+                               (bool)telemetryData.ledCheckOil;
+                               
+        hw["led_battery"]    = (manualOverride & (1UL << OVR_BIT_LED_BATT)) ? 
+                               ((manualOverride_Values & (1UL << OVR_BIT_LED_BATT)) ? true : false) : 
+                               (bool)telemetryData.ledBattery;
+                               
         hw["ws2812"]         = (int)telemetryData.ws2812Status;
         hw["aux_in13"]       = (bool)telemetryData.auxinput13;
+
+        xSemaphoreGive(dataMutex);
 
         xSemaphoreGive(dataMutex);
     }

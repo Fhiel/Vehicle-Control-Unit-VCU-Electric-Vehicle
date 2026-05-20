@@ -338,28 +338,28 @@ void loop() {
         check_data_timeout(now);
         handleLockState();          // Coordinates Type 2 charge lock sequence
         
-        // 2. Run Baseline Automated Functions Normally
-        update_led();               
-        update_auxiliary_relays();  
-        update_alarm_states();      
-
-        // 3. UNBREAKABLE INTERCEPT SHUNT MATRIX
-        // Intercepts and overwrites the registers right after automated loops run,
-        // locking your manual test bench settings in place before data updates.
+        // 2. UNBREAKABLE INTERCEPT SHUNT MATRIX (MOVED BEFORE COMMITS)
+        // This intercepts and locks user selections into RAM right before the
+        // low-level hardware functions execute and drive the physical pins.
         if (manualOverride > 0) {
             // --- Digital Indicators & Alerts ---
             if (manualOverride & (1UL << OVR_BIT_CHECK_OIL))  { telemetryData.ledCheckOil = (manualOverride_Values & (1UL << OVR_BIT_CHECK_OIL)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_LED_BATT))  { telemetryData.ledBattery  = (manualOverride_Values & (1UL << OVR_BIT_LED_BATT)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_FAN))       { telemetryData.fanRelay   = (manualOverride_Values & (1UL << OVR_BIT_FAN)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_PIEZO))     { telemetryData.isPiezoOn  = (manualOverride_Values & (1UL << OVR_BIT_PIEZO)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_ALARM))     { telemetryData.isAlarm    = (manualOverride_Values & (1UL << OVR_BIT_ALARM)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_LED_BATT))   { telemetryData.ledBattery  = (manualOverride_Values & (1UL << OVR_BIT_LED_BATT)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_FAN))        { telemetryData.fanRelay    = (manualOverride_Values & (1UL << OVR_BIT_FAN)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_PIEZO))      { telemetryData.isPiezoOn   = (manualOverride_Values & (1UL << OVR_BIT_PIEZO)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_ALARM))      { telemetryData.isAlarm     = (manualOverride_Values & (1UL << OVR_BIT_ALARM)) ? true : false; }
 
             // --- Hut V3 Auxiliary Board Relays ---
-            if (manualOverride & (1UL << OVR_BIT_REL11))     { telemetryData.auxRelay11 = (manualOverride_Values & (1UL << OVR_BIT_REL11)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_REL12))     { telemetryData.auxRelay12 = (manualOverride_Values & (1UL << OVR_BIT_REL12)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_REL13))     { telemetryData.auxRelay13 = (manualOverride_Values & (1UL << OVR_BIT_REL13)) ? true : false; }
-            if (manualOverride & (1UL << OVR_BIT_REL14))     { telemetryData.auxRelay14 = (manualOverride_Values & (1UL << OVR_BIT_REL14)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_REL11))      { telemetryData.auxRelay11  = (manualOverride_Values & (1UL << OVR_BIT_REL11)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_REL12))      { telemetryData.auxRelay12  = (manualOverride_Values & (1UL << OVR_BIT_REL12)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_REL13))      { telemetryData.auxRelay13  = (manualOverride_Values & (1UL << OVR_BIT_REL13)) ? true : false; }
+            if (manualOverride & (1UL << OVR_BIT_REL14))      { telemetryData.auxRelay14  = (manualOverride_Values & (1UL << OVR_BIT_REL14)) ? true : false; }
         }
+
+        // 3. Physical Driver Commits: Driven safely with shielded override values
+        update_led();               // Commits current battery lighting states to hardware pins
+        update_auxiliary_relays();  // Commits Hut V3 relay states to expansion board hardware ports
+        update_alarm_states();      // Commits oil lamp, radiator fan, and acoustic loops to pins
 
         // 4. Automated Edge Trigger for the Bender IMD Isolation Self-Test
         static uint8_t lastBmsStatus = BMS_STATUS_BOOT;
@@ -388,7 +388,7 @@ void loop() {
         
         lastSafetyCheck = now;
     }
-
+    
     // =========================================================================
     // E. ULTRA-SLOW CYCLE: THERMAL PROPULSION LOOPS (2000ms / 0.5Hz)
     // =========================================================================

@@ -54,8 +54,8 @@ jobs:
           #define AP_SSID       "VCU_Bertone_X19e"
           #define AP_PASS       "19832026"
           // Map your existing GitHub Action secrets directly to your code's variable names
-          #define WIFI_SSID "${{ secrets.WIFI_SSID }}"
-          #define WIFI_PASS "${{ secrets.WIFI_PASS }}"
+          #define HOME_SSID "${{ secrets.WIFI_SSID }}"
+          #define HOME_PASS "${{ secrets.WIFI_PASS }}"
           #define OTA_USER "${{ secrets.OTA_USER }}"
           #define OTA_PASS "${{ secrets.OTA_PASS }}"
           

@@ -50,6 +50,10 @@ jobs:
           #ifndef SECRETS_H
           #define SECRETS_H
 
+          // --- Access Point Settings (Car Internal Network) ---
+          #define AP_SSID       "VCU_Bertone_X19e"
+          #define AP_PASS       "19832026"
+          // Map your existing GitHub Action secrets directly to your code's variable names
           #define WIFI_SSID "${{ secrets.WIFI_SSID }}"
           #define WIFI_PASS "${{ secrets.WIFI_PASS }}"
           #define OTA_USER "${{ secrets.OTA_USER }}"

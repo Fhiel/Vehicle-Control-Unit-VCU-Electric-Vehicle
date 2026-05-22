@@ -46,7 +46,7 @@ jobs:
       # EXTENDED STEP: Now appends the dynamic CalVer directly into your build target environment
       - name: Inject Secrets and Version into secrets.h
         run: |
-          cat <<EOF > src/secrets.h
+          cat <<EOF > include/secrets.h
           #ifndef SECRETS_H
           #define SECRETS_H
 

@@ -28,7 +28,7 @@
 // --- LOCAL DEV COMPILER SAFETY SHUNT ---
 // Prevents local compile crashes when building outside of GitHub Actions
 #ifndef FW_VERSION
-  #define FW_VERSION "2026.LOCAL.DEV"
+#define FW_VERSION "2026.LOCAL.DEV"
 #endif
 
 // Global instances
@@ -37,8 +37,9 @@ AsyncWebSocket webSocket("/ws");
 
 // --- ArduinoJson V7 Optimized Buffer ---
 static JsonDocument doc;
-// Use PSRAM for the buffer on T-2CAN to save internal Heap
-static char jsonBuffer[1536];
+// UPGRADED: Expanded from 1536 to 2560 bytes to safely handle 
+// the expanded 8-group nested payload matrix without overflow
+static char jsonBuffer[2560];
 
 // Forward Declaration
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, 
@@ -339,7 +340,7 @@ void updateWebDashboard() {
         // --- HARMONIZED CORE CONFIGURATION UPGRADE ---
         // Group 6: System Hardware Metadata Tracking Loop
         JsonObject sys = doc["sys"].to<JsonObject>();
-        sys["fw"]  = FW_VERSION; // Automatically references the macro injected by the GitHub Runner
+        sys["fw"]  = F(FW_VERSION); // Automatically references the macro injected by the GitHub Runner
         sys["ram"] = ESP.getFreeHeap();
 
         // ====================================================================
@@ -441,8 +442,6 @@ void updateWebDashboard() {
                                
         hw["ws2812"]         = (int)telemetryData.ws2812Status;
         hw["aux_in13"]       = (bool)telemetryData.auxinput13;
-
-        xSemaphoreGive(dataMutex);
 
         xSemaphoreGive(dataMutex);
     }

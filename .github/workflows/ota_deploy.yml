@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write    # Crucial: Changed from read to write so the action can push Git Version Tags
   pages: write
   id-token: write
 
@@ -20,6 +20,18 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches full history so tracking rules can find commit sequences if needed
+
+      - name: Generate Dynamic CalVer String
+        id: calver
+        run: |
+          YEAR=$(date +'%Y')
+          WEEK=$(date +'%V')
+          RUN_NUMBER=${{ github.run_number }}
+          VERSION_STRING="${YEAR}.${WEEK}.${RUN_NUMBER}"
+          echo "FW_VERSION=$VERSION_STRING" >> $GITHUB_OUTPUT
+          echo "Generated Version Tag: $VERSION_STRING"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,8 +43,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install platformio
 
-      # DER MAGISCHE SCHRITT: Erzeugt die secrets.h im src-Ordner aus den GitHub-Secrets
-      - name: Inject Secrets into secrets.h
+      # EXTENDED STEP: Now appends the dynamic CalVer directly into your build target environment
+      - name: Inject Secrets and Version into secrets.h
         run: |
           cat <<EOF > src/secrets.h
           #ifndef SECRETS_H
@@ -42,6 +54,8 @@ jobs:
           #define WIFI_PASS "${{ secrets.WIFI_PASS }}"
           #define OTA_USER "${{ secrets.OTA_USER }}"
           #define OTA_PASS "${{ secrets.OTA_PASS }}"
+          
+          #define FW_VERSION "${{ steps.calver.outputs.FW_VERSION }}"
 
           #endif
           EOF
@@ -57,11 +71,21 @@ jobs:
           mkdir -p docs
           cp .pio/build/lilygo_t2can/firmware.bin docs/
           cp .pio/build/lilygo_t2can/littlefs.bin docs/
+          # Write version file into docs so the Expert page can easily fetch it via HTTP if required
+          echo "${{ steps.calver.outputs.FW_VERSION }}" > docs/version.txt
 
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs
+
+      # NEW STEP: Automatically creates and pushes a true Release Tag onto your GitHub Repository view
+      - name: Create and Push GitHub Version Tag
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.calver.outputs.FW_VERSION }}" -m "Automated VCU Release Build v${{ steps.calver.outputs.FW_VERSION }}"
+          git push origin "${{ steps.calver.outputs.FW_VERSION }}"
 
   deploy:
     environment:

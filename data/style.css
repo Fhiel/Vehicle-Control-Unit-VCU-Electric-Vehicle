@@ -283,10 +283,38 @@ body.show-expert #page-expert { display: block !important; }
     display: flex; 
     align-items: flex-end; 
     justify-content: space-between; 
-    padding: 0 6% 0 6%; 
+    padding: 0 6% 0 6%; /* Visual track bounds */
     box-sizing: border-box; 
     margin: 0 auto !important; 
 }
+
+/* --- HARMONIZED SCALE LABELS (CENTERED TRIPLE BOUND) --- */
+.scale-labels { 
+    position: relative; 
+    z-index: 5; 
+    display: flex; 
+    justify-content: space-between; 
+    padding: 0 6% 0 6%; /* Matches track boundaries perfectly */          
+    margin-top: 2px; 
+    box-sizing: border-box;
+    height: 14px;
+}
+
+/* Standardize styling and balance label text centers precisely under the ticks */
+.scale-labels span, 
+.scale-labels .scale-val { 
+    color: var(--bertone-gold); 
+    font-size: 1.0em; 
+    font-weight: 800; 
+    display: inline-block;
+}
+
+/* Center-of-mass corrections for string widths using simple flex-edge alignment */
+.scale-labels span:nth-child(1), .scale-labels .scale-val:nth-child(1) { transform: translateX(-33%); }
+.scale-labels span:nth-child(2), .scale-labels .scale-val:nth-child(2) { transform: translateX(0); text-align: center; }
+.scale-labels span:nth-child(3), .scale-labels .scale-val:nth-child(3) { transform: translateX(33%); }
+
+.scale-val { color: var(--bertone-gold); font-size: 1.0em; font-weight: 800; }
 
 /* --- GRADUATED CHROMATIC TICK ARRAYS --- */
 .tick { background: #fff; width: 1px; height: 18px; opacity: 0.8; }
@@ -323,44 +351,38 @@ body.show-expert #page-expert { display: block !important; }
     z-index: 1; 
 }
 
-/* --- HARMONIZED SCALE LABELS (CENTERED TRIPLE BOUND) --- */
-.scale-labels { 
-    position: relative; 
-    z-index: 5; 
-    display: flex; 
-    justify-content: space-between; 
-    padding: 0 6% 0 6%;          
-    margin-top: 2px; 
-    box-sizing: border-box;
-    height: 14px;
-}
-
-/* Balanced standard layouts for symmetrical instruments (INV & ISO-R) */
-.scale-labels:not(.kinetic-labels) span:text-child(1) { transform: translateX(-50%); }
-.scale-labels:not(.kinetic-labels) span:nth-child(2) { text-align: center; }
-.scale-labels:not(.kinetic-labels) span:nth-child(3) { transform: translateX(50%); }
-
-/* NEW FEATURE: Absolute layout anchors for the side-by-side asymmetric traction elements */
-.scale-labels.kinetic-labels {
-    display: block;
-    position: relative;
-    padding: 0;
-}
-.scale-labels.kinetic-labels span {
+/* --- TORQUE WARN BLOCK --- */
+.trq-yellow {
     position: absolute;
-    transform: translateX(-50%);
+    right: 6%; /* Stops exactly at the +200 gold tick */
+    bottom: 0;
+    width: 11%; /* Spans from 150Nm to 200Nm */
+    height: 20px;
+    background: #ffcc00;
+    z-index: 1;
 }
 
-/* Dynamic positioning based exactly on physical viewport grid widths (6% start to 94% end) */
-#box-current .scale-labels.kinetic-labels span:nth-child(1) { left: 6.00%; }  /* -250A */
-#box-current .scale-labels.kinetic-labels span:nth-child(2) { left: 39.85%; } /* 0A */
-#box-current .scale-labels.kinetic-labels span:nth-child(3) { left: 94.00%; } /* +400A */
+/* --- CURRENT WARN & ERROR BLOCKS --- */
+.cur-yellow {
+    position: absolute;
+    right: 13.34%; /* Starts exactly where the red zone begins */
+    bottom: 0;
+    width: 7.34%; /* Spans from 200A to 250A */
+    height: 20px;
+    background: #ffcc00;
+    z-index: 1;
+}
 
-#box-torque .scale-labels.kinetic-labels span:nth-child(1) { left: 18.50%; } /* -75% */
-#box-torque .scale-labels.kinetic-labels span:nth-child(2) { left: 56.28%; } /* 0% */
-#box-torque .scale-labels.kinetic-labels span:nth-child(3) { left: 94.00%; } /* +100% */
+.cur-red {
+    position: absolute;
+    right: 6%; /* Stops exactly at the +300 gold tick */
+    bottom: 0;
+    width: 7.34%; /* Spans from 250A to 300A */
+    height: 20px;
+    background: var(--warning-red);
+    z-index: 1;
+}
 
-.scale-val { color: var(--bertone-gold); font-size: 1.0em; font-weight: 800; }
 
 /* --- MASTER CHASSIS PHYSIC NEEDLE VECTOR --- */
 .needle { 

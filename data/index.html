@@ -46,32 +46,31 @@
                         </div>
                     </div>
                 </div>
-
+                                   
                 <div id="ui-kinetic-gauges" class="main-diag" style="display: none;">
+                                    
                     <div class="diag-box" id="box-current">
                         <div class="diag-header">
                             <span class="diag-label">CURRENT</span>
-                            <div class="val-top"><span id="live-bms-cur">n/a</span><span class="unit">A</span></div>
+                            <div class="val-top"><span id="current">n/a</span><span class="unit">A</span></div>
                         </div>
                         <div class="gauge-wrapper">
-                            <div id="current-needle" class="needle" style="left: -5%;"></div>
+                            <div id="current-needle" class="needle" style="left: 1%;"></div>
                             <div class="scale-container">
-                                <div class="iso-yellow" style="right: 14.69%; width: 7.69%;"></div>
-                                <div class="iso-red" style="right: 7%; width: 7.69%;"></div>
-                                <div class="tick thick gold"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick gold"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick gold"></div>
-                            </div>
-                            <div class="scale-labels kinetic-labels">
-                                <span class="scale-val">-250A</span>
-                                <span class="scale-val">0</span>
-                                <span class="scale-val">+400</span>
+                                <div class="cur-yellow"></div>
+                                <div class="cur-red"></div>
+
+                                <div class="tick thick gold"></div> <div class="tick"></div>
+                                <div class="tick thick"></div>      <div class="tick"></div>
+                                <div class="tick thick"></div>      <div class="tick"></div>
+                                <div class="tick thick gold"></div> <div class="tick"></div>
+                                <div class="tick thick"></div>      <div class="tick"></div>
+                                <div class="tick thick"></div>      <div class="tick"></div>
+                                <div class="tick thick gold"></div> </div>
+                            <div class="scale-labels">
+                                <span class="scale-val">-300</span>
+                                <span class="scale-val" style="color: var(--bertone-gold);">0</span>
+                                <span class="scale-val">+300</span>
                             </div>
                         </div>
                     </div>
@@ -79,27 +78,22 @@
                     <div class="diag-box" id="box-torque">
                         <div class="diag-header">
                             <span class="diag-label">TORQUE</span>
-                            <div class="val-top"><span id="live-mcu-trq">n/a</span><span class="unit">%</span></div>
+                            <div class="val-top"><span id="torque">n/a</span><span class="unit">Nm</span></div>
                         </div>
                         <div class="gauge-wrapper">
-                            <div id="torque-needle" class="needle" style="left: -5%;"></div>
+                            <div id="torque-needle" class="needle" style="left: 1%;"></div>
                             <div class="scale-container">
-                                <div class="iso-yellow" style="right: 13.6%; width: 6.6%;"></div>
-                                <div class="iso-red" style="right: 7%; width: 6.6%;"></div>
-                                <div class="tick thick gold"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick gold"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick"></div>
-                                <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
-                                <div class="tick thick gold"></div>
-                            </div>
-                            <div class="scale-labels kinetic-labels">
-                                <span class="scale-val">-75%</span>
-                                <span class="scale-val">0</span>
-                                <span class="scale-val">+100</span>
+                                <div class="trq-yellow"></div>
+
+                                <div class="tick thick gold"></div> <div class="tick"></div>
+                                <div class="tick thick"></div>      <div class="tick"></div>
+                                <div class="tick thick gold"></div> <div class="tick"></div>
+                                <div class="tick thick"></div>      <div class="tick"></div>
+                                <div class="tick thick gold"></div> </div>
+                            <div class="scale-labels">
+                                <span class="scale-val">-200</span>
+                                <span class="scale-val" style="color: var(--bertone-gold);">0</span>
+                                <span class="scale-val">+200</span>
                             </div>
                         </div>
                     </div>
@@ -195,7 +189,7 @@
                     <div class="data-row"><span>RPM:</span><span><span class="val" id="mcu_rpm">0</span><span class="unit">RPM</span></span></div>
                     <div class="data-row"><span>Torque:</span><span><span class="val" id="mcu_trq">0.0</span><span class="unit">%</span></span></div>
                     <div class="data-row"><span>Motor Temp:</span><span><span class="val" id="mcu_mT_exp">0</span><span class="unit">°C</span></span></div>
-                    <div class="data-row"><span>MCU Temp:</span><span><span class="val" id="mcu_cT">0</span><span class="unit">°C</span></span></div>
+                    <div class="data-row"><span>INV Temp:</span><span><span class="val" id="mcu_cT">0</span><span class="unit">°C</span></span></div>
                 </div>
 
                 <div class="expert-box">
@@ -448,6 +442,10 @@
                     </div>
                     <div id="ota-status" style="margin-top:8px; text-align:center; font-size:0.85em; color:#888;">
                         System ready for maintenance
+                    </div>
+                    <div>
+                        <span>Firmware Version:</span>
+                        <span id="vcu-fw-version" style="color: var(--bertone-gold);">Fetching...</span>
                     </div>
                 </div>
 

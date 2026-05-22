@@ -23,7 +23,13 @@
 #include "secrets.h"
 
 #include <LittleFS.h>
-//#include "pwa_data.h"  replaced by manifest.json in LittleFS for better maintainability and separation of concerns
+#include "secrets.h"
+
+// --- LOCAL DEV COMPILER SAFETY SHUNT ---
+// Prevents local compile crashes when building outside of GitHub Actions
+#ifndef FW_VERSION
+  #define FW_VERSION "2026.LOCAL.DEV"
+#endif
 
 // Global instances
 AsyncWebServer server(80);
@@ -329,6 +335,12 @@ void updateWebDashboard() {
         proxy["inh"] = (bool)driveInhibit; 
         proxy["lim"] = (telemetryData.bmsHighTempWarn) ? 50 : (telemetryData.bmsLowVoltageWarn ? 40 : 100);
         proxy["flt"] = (bool)systemFault;
+
+        // --- HARMONIZED CORE CONFIGURATION UPGRADE ---
+        // Group 6: System Hardware Metadata Tracking Loop
+        JsonObject sys = doc["sys"].to<JsonObject>();
+        sys["fw"]  = FW_VERSION; // Automatically references the macro injected by the GitHub Runner
+        sys["ram"] = ESP.getFreeHeap();
 
         // ====================================================================
         // EXPANDED CHANNEL ROUTING ENGINE (MAN/AUTO PROTECTION INTERLOCK)

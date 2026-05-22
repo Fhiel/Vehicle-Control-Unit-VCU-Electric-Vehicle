@@ -53,11 +53,25 @@ void send_proxy_bms_data() {
         soc_hyper9 = (uint16_t)((telemetryData.bmsSoC / 100.0f) * 32768.0f);
         current_da = (int16_t)(telemetryData.bmsCurrent * 10.0f);
         
-        if (telemetryData.bmsHighTempWarn) limit_percent = 50;
-        else if (telemetryData.bmsLowVoltageWarn) limit_percent = 40;
+        // --- DYNAMIC CURRENT LIMITING (200A PROTECT) ---
+        // Use RPM directly from the thread safe telemetry data
+        if (telemetryData.motorRPM > 1272) {
+            uint32_t calculated_limit = 127240 / telemetryData.motorRPM;
+            limit_percent = (uint8_t)calculated_limit;
+            if (limit_percent > 100) limit_percent = 100;
+            if (limit_percent < 10) limit_percent = 10; // Lowest value, to ensure propulsion
+        } else {
+            limit_percent = 100; // Maximum Torque at Start with less than 1272 U/min
+        }
+
+        // BMS-Warning have always highest priority
+        if (telemetryData.bmsHighTempWarn && limit_percent > 50) {
+            limit_percent = 50;
+        } else if (telemetryData.bmsLowVoltageWarn && limit_percent > 40) {
+            limit_percent = 40;
+        }
 
         // --- DRIVE INHIBIT (INTERLOCK) LOGIC ---
-        // Bit 5 set = Motor Disabled / Inverter Interlock active
         bool cableConnected = (telemetryData.bmsStatus == 0x04 || telemetryData.isCharging);
         bool systemFault = (telemetryData.selfTestResult != 0 || telemetryData.bmsHardwareFault);
         
@@ -82,7 +96,7 @@ void send_proxy_bms_data() {
     msg.data[2] = (uint8_t)(current_da >> 8);
     msg.data[3] = (uint8_t)(current_da & 0xFF);
     msg.data[4] = status;
-    msg.data[5] = limit_percent;
+    msg.data[5] = limit_percent; // dynamic calculated limit send to Inverter
     twai_transmit(&msg, pdMS_TO_TICKS(5));
 }
 

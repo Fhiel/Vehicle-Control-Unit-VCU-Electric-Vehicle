@@ -153,7 +153,7 @@ function updateRangeUI() {
     if (valEl && unitEl) {
         if (displaySoC) {
             valEl.innerText = window.lastData.vcu.soc ?? 0;
-            unitEl.innerText = "%"; // Clean, tight percentage sign inline
+            unitEl.innerText = " %"; // Clean, tight percentage sign inline
         } else {
             valEl.innerText = window.lastData.vcu.range ?? 0;
             unitEl.innerText = " km"; // Stripped of text, matching standard dashboard design
@@ -161,58 +161,168 @@ function updateRangeUI() {
     }
 }
 
-function setGauge(id, val, min, max) { 
+/**
+ * @brief Unified Precision Engine for Symmetrical Bertone Dash Clusters
+ * @param {string} id - Base DOM element prefix (e.g., 'i-temp', 'torque', 'current', 'iso')
+ * @param {number} val - Raw incoming parameter value from the JSON stream
+ * @param {boolean} isValid - Telemetry health state flag from the VCU/BMS
+ * @param {number} minScale - Calibrated value matching the left Gold tick mark
+ * @param {number} maxScale - Calibrated value matching the right Gold tick mark
+ * @param {boolean} isLog - Enable standard log transformation for the ISO grid
+ */
+function setClusterGauge(id, val, isValid, minScale, maxScale, isLog = false) {
     const needle = document.getElementById(id + '-needle');
-    const display = document.getElementById(id); 
+    const display = document.getElementById(id + '-val') || document.getElementById(id);
+    if (!needle && !display) return;
+
+    let numVal = parseFloat(val);
+    const isInvalid = !isValid || isNaN(numVal) || numVal === 255 || val === null || val === undefined;
+
+    // --- 1. SENSOR TIMEOUT / DATA DISCONNECT STATE ---
+    if (isInvalid) {
+        if (display) display.innerText = "n/a";
+        if (needle) {
+            needle.style.opacity = "1";
+            needle.style.left = "1%"; // Parks the needle safely out of bounds on the left
+        }
+        return;
+    }
+
+    // --- 2. NOMINAL RUN STATE ---
+    if (display) display.innerText = Math.round(numVal);
+    if (needle) needle.style.opacity = "1";
+
+    let pct = 0;
+
+    if (isLog) {
+        let safeVal = Math.max(numVal, minScale);
+        pct = ((Math.log(safeVal) - Math.log(minScale)) / (Math.log(maxScale) - Math.log(minScale))) * 100.0;
+        pct = 100.0 - pct; 
+    } else {
+        let clampedVal = Math.max(minScale, Math.min(maxScale, numVal));
+        pct = ((clampedVal - minScale) / (maxScale - minScale)) * 100.0;
+    }
+
+    // --- 3. MATCHING CSS BOX PADDING (6% to 94% Bounds) ---
+    let finalLeft = 6 + ((pct / 100.0) * 88);
+    
+    if (needle) needle.style.left = finalLeft + "%";
+}
+
+function setGauge(id, val, isValid) { 
+    // CRITICAL FIX: Symmetrize ID checking to target 'i-temp' if 'm-temp' is dispatched
+    const needle = document.getElementById('i-temp-needle');
+    const display = document.getElementById('i-temp'); 
     if (!needle && !display) return; 
     
     let numVal = parseFloat(val);
-    if (display) {
-        if (isNaN(numVal) || numVal === 255 || numVal === 0) {
-            display.innerText = "n/a";
-            if (needle) {
-                needle.style.opacity = "1";
-                needle.style.left = "1%";
-            }
-            return;
-        } else {
-            display.innerText = numVal;
-            if (needle) needle.style.opacity = "1";
-        }
+    const isInvalid = !isValid || isNaN(numVal) || numVal === 255 || val === null || val === undefined;
+
+    if (isInvalid) {
+        if (display) display.innerText = "n/a"; // Corrected: Overwrites -- explicitly to n/a
+        if (needle) needle.style.left = "0%"; // Drop dead completely out to the left margin
+        return;
     }
+    
+    let min = 0;
+    let max = 95;
+
+    if (display) display.innerText = Math.round(numVal);
+    
     if (needle) {
-        let pct = ((numVal - min) / (max - min)) * 88;
-        let finalLeft = 6 + pct;
-        finalLeft = Math.min(Math.max(finalLeft, 6), 94); 
+        needle.style.opacity = "1";
+        let clampedVal = Math.max(min, Math.min(max, numVal));
+        let pct = ((clampedVal - min) / (max - min)) * 100.0;
+        
+        // Map cleanly across the active visual window (5% to 95%)
+        let finalLeft = 5 + ((pct / 100.0) * 90);
         needle.style.left = finalLeft + "%";
     }
 }
 
-function setIsoGauge(val) { 
+function setIsoGauge(val, isValid) { 
     const needle = document.getElementById('iso-needle');
     const display = document.getElementById('iso-val'); 
     if (!needle && !display) return;
     
     let numVal = parseFloat(val);
-    if (display) {
-        if (isNaN(numVal) || numVal === 255 || numVal === 0) {
-            display.innerText = "n/a";
-            if (needle) {
-                needle.style.opacity = "1";
-                needle.style.left = "1%";
-            }
-            return; 
-        } else {
-            display.innerText = numVal;
-            if (needle) needle.style.opacity = "1";
+    const isInvalid = !isValid || isNaN(numVal) || numVal === 255 || val === null || val === undefined;
+
+    // --- 1. GENUINE HARDWARE FAULT / DATA DISCONNECT ---
+    if (isInvalid) {
+        if (display) display.innerText = "n/a";
+        if (needle) {
+            needle.style.opacity = "1";
+            needle.style.left = "1%"; // Drops to left mechanical rest
         }
+        return; 
     }
-    if (!needle) return;
+
+    // --- 2. NOMINAL READOUT (0 is now perfectly legal!) ---
+    if (display) display.innerText = Math.round(numVal);
+    if (needle) needle.style.opacity = "1";
+
+    // --- 3. LOGARITHMIC INTERPOLATION RUN ---
     let safeVal = Math.max(numVal, 0.1); 
     let pct = ((Math.log(safeVal) - Math.log(0.1)) / (Math.log(50000) - Math.log(0.1))) * 88;
     let invertedPct = 88 - pct;
+    
     let finalLeft = 6 + invertedPct;
     finalLeft = Math.min(Math.max(finalLeft, 6), 94);
+    needle.style.left = finalLeft + "%";
+}
+
+function setCurGauge(val, isValid) {
+    const needle = document.getElementById('current-needle');
+    const display = document.getElementById('current'); 
+    if (!needle && !display) return; 
+
+    let numVal = parseFloat(val);
+    const isInvalid = !isValid || isNaN(numVal) || numVal === 255 || val === null || val === undefined;
+
+    if (isInvalid) {
+        if (display) display.innerText = "n/a";
+        if (needle) needle.style.left = "0%"; // True mechanical rest drop
+        return;
+    }
+
+    if (display) display.innerText = Math.round(numVal);
+    if (needle) needle.style.opacity = "1";
+
+    let clampedVal = Math.max(-300, Math.min(300, numVal));
+    
+    // Core physical calculation: Forces a true '0' input to evaluate exactly to 50%
+    let pct = ((clampedVal - (-300)) / 600) * 100.0;
+
+    // CRITICAL FIX: Shift boundary metrics to 5% - 95% width to lock 0 dead-center in the box wrapper
+    let finalLeft = 5 + ((pct / 100.0) * 90);
+    needle.style.left = finalLeft + "%";
+}
+
+function setTrqGauge(val, isValid) {
+    const needle = document.getElementById('torque-needle');
+    const display = document.getElementById('torque'); 
+    if (!needle && !display) return; 
+
+    let numVal = parseFloat(val);
+    const isInvalid = !isValid || isNaN(numVal) || numVal === 255 || val === null || val === undefined;
+
+    if (isInvalid) {
+        if (display) display.innerText = "n/a";
+        if (needle) needle.style.left = "0%"; // True mechanical rest drop
+        return;
+    }
+
+    if (display) display.innerText = Math.round(numVal);
+    if (needle) needle.style.opacity = "1";
+
+    let clampedVal = Math.max(-200, Math.min(200, numVal));
+    
+    // Core physical calculation: Forces a true '0' input to evaluate exactly to 50%
+    let pct = ((clampedVal - (-200)) / 400) * 100.0;
+
+    // CRITICAL FIX: Shift boundary metrics to 5% - 95% width to force -200 all the way left and 0 dead center
+    let finalLeft = 5 + ((pct / 100.0) * 90);
     needle.style.left = finalLeft + "%";
 }
 
@@ -282,23 +392,18 @@ ws.onmessage = function(e) {
         updateRangeUI();
 
         // =====================================================================
-        // DIRECT DECOUPLED COUPLING ENGINE (UPDATED TO REMOVE MAPPING CLASHES)
+        // DEFINITIVE UI CHANNEL SYNC ENGINE
         // =====================================================================
         if (d.ovr) {
-            // Binary Indicators & Relays 
-            syncChannelUI(d.ovr.oil,   'switch-oil-auto',   'btn-oil-on',     'btn-oil-off',     null,         null,          'card-rel-1');
+            syncChannelUI(d.ovr.oil,   'switch-oil-auto',   'btn-oil-on',    'btn-oil-off',    null,         null,          'card-rel-1');
             syncChannelUI(d.ovr.bat,   'switch-bat-auto',   'btn-batled-on',  'btn-batled-off',  null,         null,          null);
             syncChannelUI(d.ovr.fan,   'switch-fan-auto',   'btn-fan-on',     'btn-fan-off',     null,         null,          'card-rel-3');
-            // --- ISOLATED ACOUSTIC HORN OVERRIDES ---
             syncChannelUI(d.ovr.buzz,  'switch-piezo-auto', 'btn-piezo-on',   'btn-piezo-off',   null,         null,          null);
-            // --- ISOLATED VISUAL ALARM WATCHDOG (Coupled cleanly onto Main Dashboard Card 2!) ---
             syncChannelUI(d.ovr.alarm, 'switch-alarm-auto', 'btn-alarm-on',   'btn-alarm-off',   null,         null,          'card-rel-2');
 
-            // Multi-Stage PWM Coolant Pumps
             syncChannelUI(d.ovr.invp,  'switch-invp-auto',  null,             'btn-inv-off',     'btn-inv-20', 'btn-inv-80',  'card-rel-4');
             syncChannelUI(d.ovr.batp,  'switch-batp-auto',  null,             'btn-bat-off',     'btn-bat-20', 'btn-bat-80',  null);
 
-            // Hut V3 Expansion Board Aux Channels
             syncChannelUI(d.ovr.r11,   'switch-rel11-auto', 'btn-rel11-on',   'btn-rel11-off',   null,         null,          null);
             syncChannelUI(d.ovr.r12,   'switch-rel12-auto', 'btn-rel12-on',   'btn-rel12-off',   null,         null,          null);
             syncChannelUI(d.ovr.r13,   'switch-rel13-auto', 'btn-rel13-on',   'btn-rel13-off',   null,         null,          null);
@@ -306,11 +411,9 @@ ws.onmessage = function(e) {
         }
 
         // =====================================================================
-        // MCU
+        // EXPERT TEXT LABELS & BACKEND TELEMETRY FEEDBACK
         // =====================================================================
         if (d.mcu) {
-            setGauge('m-temp', d.mcu.mt, 50, 150);
-            setGauge('i-temp', d.mcu.it, 0, 95);
             setSafeText('mcu_rpm', check(d.mcu.rpm, d.mcu.rpmV));
             setSafeText('mcu_trq', d.mcu.trq !== undefined ? d.mcu.trq.toFixed(1) : "n/a");
             setSafeText('mcu_mT_exp', check(d.mcu.mt, d.mcu.mtV));
@@ -318,28 +421,10 @@ ws.onmessage = function(e) {
             setSafeText('mcu_flt', check(d.mcu.flt, d.mcu.fltV));
             
             const trqEl = document.getElementById("mcu_trq");
-            if (trqEl && d.mcu.trq !== undefined) {
-                trqEl.style.color = d.mcu.trq < 0 ? "var(--instrument-green)" : "";
-            }
-
-            if (d.mcu.trq !== undefined) {
-                const needle = document.getElementById('mcu-trq-needle');
-                if (needle) {
-                    let minScale = -20.0;
-                    let maxScale = 100.0;
-                    let pct = ((d.mcu.trq - minScale) / (maxScale - minScale)) * 88;
-                    let finalLeft = 6 + pct;
-                    finalLeft = Math.min(Math.max(finalLeft, 6), 94);
-                    needle.style.left = finalLeft + "%";
-                }
-            }
+            if (trqEl && d.mcu.trq !== undefined) trqEl.style.color = d.mcu.trq < 0 ? "var(--instrument-green)" : "";
         }
 
-        // =====================================================================
-        // IMD + BMS + PROXY + VCU STATUS
-        // =====================================================================
         if (d.imd) {
-            setIsoGauge(d.imd.r);
             setSafeText('imd_res', check(d.imd.r, d.imd.rV));
             let stText = check(d.imd.st, d.imd.stV);
             if (stText !== "n/a" && d.imd.stV) {
@@ -356,21 +441,7 @@ ws.onmessage = function(e) {
             setSafeText('imd_hv1',  d.bms.v);
             
             const curEl = document.getElementById("bms_cur");
-            if (curEl && d.bms.a !== undefined) {
-                curEl.style.color = d.bms.a < -0.5 ? "var(--instrument-green)" : "";
-            }
-
-            if (d.bms.a !== undefined) {
-                const needle = document.getElementById('bms-cur-needle');
-                if (needle) {
-                    let minScale = -40.0;
-                    let maxScale = 200.0;
-                    let pct = ((d.bms.a - minScale) / (maxScale - minScale)) * 88; 
-                    let finalLeft = 6 + pct;
-                    finalLeft = Math.min(Math.max(finalLeft, 6), 94);
-                    needle.style.left = finalLeft + "%";
-                }
-            }
+            if (curEl && d.bms.a !== undefined) curEl.style.color = d.bms.a < -0.5 ? "var(--instrument-green)" : "";
         }
 
         if (d.proxy) {
@@ -387,29 +458,20 @@ ws.onmessage = function(e) {
                 tripBtn.classList.toggle('mode-active', !!d.vcu.trip);
                 dailyBtn.classList.toggle('mode-active', !d.vcu.trip);
             }
-
             const lockEl = document.getElementById('d-lock');
             if (lockEl) {
                 lockEl.innerText = d.vcu.unl ? "UNLOCKING" : (d.vcu.err ? "LOCK ERROR" : (d.vcu.run ? "SELFTEST" : "STABLE"));
                 lockEl.style.color = d.vcu.err ? "var(--tesla-red)" : "var(--instrument-green)";
             }
-
             setSafeText('vcu_uptime', d.vcu.ontm !== undefined ? d.vcu.ontm : "0");
         }
 
-        // =====================================================================
-        // HARDWARE STATUS (Absturzsicher & rein informativ gemappt)
-        // =====================================================================
         if (d.hw) {
-            // --- NATIVE FAN INJECTION FOR AUTOMATION LOOP ---
             const c3 = document.getElementById('card-rel-3');
             if (c3 && d.ovr && d.ovr.fan.m === 0) {
-                // When Fan is in AUTO mode, animate home-tile purely off physical relay state
                 if (d.hw.fan_relay) c3.classList.add('card-active-fan');
                 else                c3.classList.remove('card-active-fan');
             }
-
-            // Standard status label
             setSafeText('hw_ledoil',    d.hw.led_oil ? "ON" : "OFF");
             setSafeText('hw_ledbat',    d.hw.led_battery ? "ON" : "OFF");
             setSafeText('hw_PIEZO',     d.hw.piezo ? "ON" : "OFF");
@@ -419,12 +481,10 @@ ws.onmessage = function(e) {
             setSafeText('bat-pump',     d.hw.bat_pump_pwm ?? 0); 
             setSafeText('hw_invrelay',  d.hw.inv_pump_relay ? "ON" : "OFF");
             setSafeText('inv-pump',     d.hw.inv_pump_pwm ?? 0);
-            
             setSafeText('hw_lock1',     d.hw.lock_in1 ? "ON" : "OFF");
             setSafeText('hw_lock2',     d.hw.lock_in2 ? "ON" : "OFF");
             setSafeText('hw_lockfb',    d.hw.lock_fb ? "CLOSED" : "OPEN");
             setSafeText('hw_manual',    d.hw.manual_unlock ? "PRESSED" : "IDLE");
-
             setSafeText('aux_rel11_val', d.hw.aux_rel11 ? "ON" : "OFF");
             setSafeText('aux_rel12_val', d.hw.aux_rel12 ? "ON" : "OFF");
             setSafeText('aux_rel13_val', d.hw.aux_rel13 ? "ON" : "OFF");
@@ -432,34 +492,28 @@ ws.onmessage = function(e) {
             setSafeText('aux_in13_val',  d.hw.aux_in13 ? "HIGH" : "LOW");
         }
 
-        // =====================================================================
-        // KINETIC PROFILES PANEL INTERLOCK & LABOR LIVE SWITCH
-        // =====================================================================
-        let isLaborDemoActive = false;
-
-        // 1. Lese das dedizierte Demo-Flag aus Group 4 aus (C++: vcu["demo_active"])
-        if (d.vcu && d.vcu.hasOwnProperty('demo_active')) {
-            isLaborDemoActive = (d.vcu.demo_active === true);
-            
-            // Experten-Schalter auf der Rückseite synchron halten
-            const swDemo = document.getElementById('switch-demo-mode');
-            const txtDemo = document.getElementById('txt-demo-status');
-            if (swDemo) swDemo.checked = isLaborDemoActive;
-            if (txtDemo) {
-                txtDemo.innerText = isLaborDemoActive ? "TEST MAX" : "OFF";
-                txtDemo.style.color = isLaborDemoActive ? "var(--instrument-green)" : "#888";
-            }
+        if (d.sys && d.sys.fw !== undefined) {
+            const fwLabel = document.getElementById('vcu-fw-version');
+            if (fwLabel) fwLabel.innerText = d.sys.fw;
         }
 
-        // Viewport Visibility Interlock: Toggles profiles vs kinetic tracking layout
+        // --- LABOR DEMO EVALUATION ---
+        let isLaborDemoActive = (d.vcu && d.vcu.demo_active === true);
+        const swDemo = document.getElementById('switch-demo-mode');
+        const txtDemo = document.getElementById('txt-demo-status');
+        if (swDemo) swDemo.checked = isLaborDemoActive;
+        if (txtDemo) {
+            txtDemo.innerText = isLaborDemoActive ? "TEST MAX" : "OFF";
+            txtDemo.style.color = isLaborDemoActive ? "var(--instrument-green)" : "#888";
+        }
+
+        // --- VIEWPORT VISIBILITY MANAGEMENT ---
         if (d.bms && d.bms.st !== undefined) {
             const profileManager = document.getElementById("ui-profile-manager");
             const kineticGauges  = document.getElementById("ui-kinetic-gauges");
-            
-            // Render kinetic dials if BMS is in DRIVE (2) or CHARGE (3) mode
             if (d.bms.st === 2 || d.bms.st === 3) {
                 if (profileManager) profileManager.style.display = "none";
-                if (kineticGauges)  kineticGauges.style.display = "grid"; // Swapped to grid for horizontal pairing
+                if (kineticGauges)  kineticGauges.style.display = "grid";
             } else {
                 if (profileManager) profileManager.style.display = "flex";
                 if (kineticGauges)  kineticGauges.style.display = "none";
@@ -467,51 +521,22 @@ ws.onmessage = function(e) {
         }
 
         // =====================================================================
-        // MATHEMATICAL NEEDLE TRACKING & DATA SANITIZATION
+        // THE REFACTOR: UNIFIED KINETIC NEEDLE PROCESSING MATRIX
         // =====================================================================
-        const curEl = document.getElementById("live-bms-cur");
-        const trqEl = document.getElementById("live-mcu-trq");
-        const curNeedle = document.getElementById("current-needle");
-        const trqNeedle = document.getElementById("torque-needle");
-
-        // --- A. CURRENT GAUGE (Spanne: -250 bis +400 = 650A) ---
-        let rawCurrent = (d.bms && d.bms.current !== undefined) ? d.bms.current : null;
         
-        if (isLaborDemoActive) rawCurrent = 400; // Im Testmodus auf Anschlag jagen
+        // 1. INVERTER/MCU TEMPERATURE GAUGE (0 to 95 °C)
+        setClusterGauge('i-temp', d.mcu?.it, d.mcu?.itV, 0, 95);
 
-        if (rawCurrent === null) {
-            if (curEl) curEl.innerText = "n/a";
-            if (curNeedle) curNeedle.style.left = "-5%"; // Sicher ausblenden vor der Skala!
-        } else {
-            if (curEl) curEl.innerText = Math.round(rawCurrent);
-            if (curNeedle) {
-                // Begrenzen auf Skalen-Eckwerte
-                let clampedCur = Math.max(-250, Math.min(400, rawCurrent));
-                // Prozentualer Anteil am Messbereich ermitteln
-                let pct = (clampedCur - (-250)) / 650;
-                // Skalieren auf den physischen Viewport (6% bis 94% = 88% Breite)
-                let leftPos = 6 + (pct * 88);
-                curNeedle.style.left = leftPos + "%";
-            }
-        }
+        // 2. MOTOR TORQUE GAUGE (-200 to +200 Nm)
+        setClusterGauge('torque', d.mcu?.trq, d.mcu?.trqV, -200, 200);
 
-        // --- B. TORQUE GAUGE (Spanne: -100% bis +100% = 200% Spanne) ---
-        let rawTorque = (d.mcu && d.mcu.torque !== undefined) ? d.mcu.torque : null;
-        
-        if (isLaborDemoActive) rawTorque = 100; // Im Testmodus auf Anschlag jagen
+        // 3. BATTERY CURRENT GAUGE (-300 to +300 A)
+        setClusterGauge('current', d.bms?.a, d.bms?.aV, -300, 300);
 
-        if (rawTorque === null) {
-            if (trqEl) trqEl.innerText = "n/a";
-            if (trqNeedle) trqNeedle.style.left = "-5%"; // Sicher ausblenden vor der Skala!
-        } else {
-            if (trqEl) trqEl.innerText = Math.round(rawTorque);
-            if (trqNeedle) {
-                let clampedTrq = Math.max(-100, Math.min(100, rawTorque));
-                let pct = (clampedTrq - (-100)) / 200;
-                let leftPos = 6 + (pct * 88);
-                trqNeedle.style.left = leftPos + "%";
-            }
-        }
+        // 4. BENDER IMD ISOLATION MONITOR GAUGE (0.1 to 50000 kΩ Log)
+        setClusterGauge('iso', d.imd?.r, d.imd?.rV, 0.1, 50000, true);
+
+
         // =====================================================================
         // TESLA-STYLE WS2812 PORT LOCK STATE DISPLAY MATRIX
         // =====================================================================

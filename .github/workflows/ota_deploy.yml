@@ -51,6 +51,7 @@ jobs:
           #define SECRETS_H
 
           // --- Access Point Settings (Car Internal Network) ---
+          define DEVICE_HOSTNAME "vcu-x19e"
           #define AP_SSID       "VCU_Bertone_X19e"
           #define AP_PASS       "19832026"
           // Map your existing GitHub Action secrets directly to your code's variable names

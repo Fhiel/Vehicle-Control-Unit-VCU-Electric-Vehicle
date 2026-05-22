@@ -25,6 +25,9 @@
 #include <LittleFS.h>
 #include "secrets.h"
 
+#include <HTTPClient.h>
+#include <Update.h>
+
 // --- LOCAL DEV COMPILER SAFETY SHUNT ---
 // Prevents local compile crashes when building outside of GitHub Actions
 #ifndef FW_VERSION
@@ -117,6 +120,77 @@ void initWebServer() {
 
     Serial.println("[NET] Waiting for network interfaces to stabilize...");
     delay(1000); // 1 second delay to allow WiFi to initialize and mDNS to propagate
+
+    // Cloud OTA Handler - ESP32 downloads bin Files from github
+    server.on("/cloudupdate", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!request->hasParam("url", true)) {
+            request->send(400, "text/plain", "Missing url parameter");
+            return;
+        }
+
+        String url = request->getParam("url", true)->value();
+        bool isFilesystem = request->hasParam("mode", true) && 
+                        request->getParam("mode", true)->value() == "fs";
+
+        Serial.printf("[CLOUD-OTA] Starting download: %s (FS=%d)\n", url.c_str(), isFilesystem);
+
+        HTTPClient http;
+        http.setTimeout(45000);                    // 45 Sekunden
+        http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);  // <<< WICHTIG
+        http.setRedirectLimit(5);                  // Max 5 Redirects
+
+        http.begin(url);
+        
+        // Wichtig für GitHub (manchmal hilft es)
+        http.addHeader("Accept", "*/*");
+        http.addHeader("User-Agent", "ESP32-VCU-OTA");
+
+        int httpCode = http.GET();
+
+        if (httpCode != HTTP_CODE_OK) {
+            Serial.printf("[CLOUD-OTA] Download failed, HTTP code: %d\n", httpCode);
+            request->send(500, "text/plain", String("Download failed: ") + httpCode);
+            http.end();
+            return;
+        }
+
+        WiFiClient* stream = http.getStreamPtr();
+        size_t contentLen = http.getSize();
+
+        if (contentLen == 0) {
+            request->send(500, "text/plain", "Empty file");
+            http.end();
+            return;
+        }
+
+        Serial.printf("[CLOUD-OTA] File size: %d bytes\n", contentLen);
+
+        if (!Update.begin(contentLen, isFilesystem ? U_SPIFFS : U_FLASH)) {
+            Serial.println("[CLOUD-OTA] Update.begin failed");
+            request->send(500, "text/plain", "Not enough space");
+            http.end();
+            return;
+        }
+
+        size_t written = Update.writeStream(*stream);
+
+        if (written == contentLen) {
+            if (Update.end(true)) {
+                Serial.println("[CLOUD-OTA] Update successful - rebooting");
+                request->send(200, "text/plain", "Update OK, rebooting...");
+                delay(800);
+                ESP.restart();
+            } else {
+                request->send(500, "text/plain", "Update.end failed");
+            }
+        } else {
+            Serial.printf("[CLOUD-OTA] Write error: %d / %d\n", written, contentLen);
+            request->send(500, "text/plain", "Write incomplete");
+        }
+
+        http.end();
+    });
+
 
     // 6. Start Server
     server.begin();

@@ -328,7 +328,7 @@ function setTrqGauge(val, isValid) {
 
 function triggerOta(type) {
     const label = type === 'firmware' ? 'the firmware (C++)' : 'the filesystem (UI)';
-    if (!confirm(`Do you want to update ${label} wirelessly from GitHub?`)) return;
+    if (!confirm(`Update ${label} from GitHub?\n\n(ESP32 will download via home WiFi)`)) return;
 
     const btnFw = document.getElementById('btn-ota-fw');
     const btnFs = document.getElementById('btn-ota-fs');
@@ -339,35 +339,29 @@ function triggerOta(type) {
     btnFw.style.opacity = "0.4"; 
     btnFs.style.opacity = "0.4";
     
-    status.innerText = `Requesting ${type} from GitHub Release...`;
+    status.innerText = `ESP32 is downloading ${type} via home WiFi...`;
     status.style.color = "var(--bertone-gold)";
 
     const baseUrl = "https://github.com/Fhiel/Vehicle-Control-Unit-VCU-Electric-Vehicle/releases/latest/download/";
     const fileName = type === 'firmware' ? 'firmware.bin' : 'littlefs.bin';
     const fileUrl = `${baseUrl}${fileName}`;
 
-    let bodyData = `url=${encodeURIComponent(fileUrl)}`;
-    if (type === 'filesystem') {
-        bodyData += `&mode=fs`;
-    }
-
-    fetch('/update', {
+    fetch('/cloudupdate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: bodyData
+        body: `url=${encodeURIComponent(fileUrl)}` + (type === 'filesystem' ? '&mode=fs' : '')
     })
     .then(response => {
         if (response.ok) {
-            status.innerText = `Success! VCU is downloading ${type}...`;
+            status.innerText = `Update successful! VCU is rebooting...`;
             status.style.color = "#3ddb67";
-            setTimeout(() => { window.location.reload(); }, 8000);
         } else {
-            throw new Error(`VCU rejected OTA (${response.status})`);
+            throw new Error(`Server error ${response.status}`);
         }
     })
     .catch(error => {
         console.error('OTA Error:', error);
-        status.innerText = `Failed: Cloud file missing or server error`;
+        status.innerText = `Failed: ESP32 could not download the file`;
         status.style.color = "var(--warning-red)";
         btnFw.disabled = false; 
         btnFs.disabled = false;

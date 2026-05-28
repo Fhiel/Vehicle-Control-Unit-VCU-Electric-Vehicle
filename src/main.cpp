@@ -22,9 +22,16 @@
 
 #include <LittleFS.h>   // For serving web assets from flash
 
+
+
+
 #ifdef HARDWARE_T2CAN
 #include <SPI.h>
 #include <mcp2515.h>          // autowp Library
+#include "driver/periph_ctrl.h"
+#include "soc/usb_periph.h"
+#include "soc/gpio_reg.h"
+
 MCP2515 mcp2515(PIN_MCP_CS); 
 SemaphoreHandle_t mcpMutex = nullptr;
 Freenove_ESP32_WS2812 led(1, WS2812_DATA_PIN, 0, TYPE_GRB);
@@ -74,6 +81,16 @@ twai_filter_config_t twai_filter_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
  * @brief Arduino setup function - initializes hardware, peripherals, and tasks.
  */
 void setup() {
+#ifdef HARDWARE_T2CAN
+    periph_module_disable(PERIPH_USB_MODULE);
+    periph_module_reset(PERIPH_USB_MODULE);
+
+    pinMode(19, INPUT_PULLDOWN);
+    pinMode(20, INPUT_PULLDOWN);
+
+    delay(100);
+#endif
+
     Serial.begin(115200);
    
     uint32_t waitSerial = millis();
@@ -140,11 +157,15 @@ void setup() {
         while (1) { delay(500); }
     }
 
-    if (mcp2515.setNormalMode() != MCP2515::ERROR_OK) {
-        Serial.println("[SPI-CAN] CRITICAL ERROR: Failed to switch MCP2515 to Normal mode! Halting.");
+    // === THE OFFICIAL API FIX ===
+    // This native function activates normal mode AND sets the OSM bit internally.
+    // No hacks, no pin conflicts, 100% stable.
+    if (mcp2515.setNormalOneShotMode() != MCP2515::ERROR_OK) {
+        Serial.println("[SPI-CAN] CRITICAL ERROR: Failed to switch MCP2515 to One-Shot mode! Halting.");
         while (1) { delay(500); }
     }
 
+    Serial.println("[SPI-CAN] Native One-Shot Mode activated. Transmit retries disabled.");
     Serial.println("[SPI-CAN] External MCP2515 initialized successfully (500kbps @ 16MHz).");
 #endif
 

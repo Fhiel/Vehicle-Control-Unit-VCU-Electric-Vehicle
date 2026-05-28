@@ -6,10 +6,16 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Fhiel/Vehicle-Control-Unit-VCU-Electric-Vehicle)
 
 An ESP32-based Vehicle Control Unit (VCU) designed for the electric conversion of a Bertone X1/9  to a Bertone X1/9e electric speed. It acts as the central nervous system, bridging high-voltage safety, thermal management, and modern user interaction.
-<img width="1364" height="648" alt="image" src="https://github.com/user-attachments/assets/2021f764-d12e-40d3-9a4a-b36c5d644bc2" />
+<img width="1237" height="499" alt="image" src="https://github.com/user-attachments/assets/42c3e269-73cc-41e2-9322-74d887b69114" />
+<img width="1239" height="498" alt="image" src="https://github.com/user-attachments/assets/00364c01-95b9-474c-b780-6f107081d9cc" />
+
+
 ## 🏎️ The Project: Bertone X1/9e
 The X1/9e is more than a conversion; it's a modernization of a 1983 classic. This VCU was developed to solve the "missing links" between industrial EV components (Tesla, Hyper9, Bender) and custom vehicle requirements.
-<img width="1107" height="389" alt="image" src="https://github.com/user-attachments/assets/d33cf675-ff92-4ca0-88b4-179c124d1a64" />
+<img width="1227" height="845" alt="image" src="https://github.com/user-attachments/assets/6d5e7ee4-95d2-4d49-bb49-6bfd49054502" />
+Manual controls allow test of all outputs attached to the VCU.
+<img width="1210" height="551" alt="image" src="https://github.com/user-attachments/assets/d61e0ead-09c6-49bc-ae36-c482ee53a0e3" />
+
 ## 🛠️ Key Components & Challenges
 |Component|Function|VCU Enhancement|
 |:--------|:------|:---|
@@ -58,6 +64,34 @@ src/
 |Manual Unlock|12|Physical Interrupt|
 |Pump PWM (INV/BAT)| 33 / 32| Independent Channels|
 |Status LED|4|WS2812B|
+
+## 🔌 Hardware Configuration (LilyGO T-C2CAN) internal
+|Function|GPIO|Logic|
+|:--------|:------:|---:|
+|Internal CAN A|7 / 6|TWAI 500kbps|
+|MCP 2515 CAN B|10 / 9 / 8|Telemetry 500kbps|
+
+## 🔌 Hardware Configuration (LilyGO T-C2CAN) 26 Pin Interface
+|Function|GPIO|Pin no.|Logic
+|:------------------|:----------|:---|:-----------|
+|TYPE2_LOCK_IN1_PIN      |GPIO_NUM_18 |CN1.23 |DRV8871 IN1 (Lock)
+|TYPE2_LOCK_IN2_PIN      |GPIO_NUM_21 |CN1.20 |DRV8871 IN2 (Unlock)
+|TYPE2_FEEDBACK_PIN      |GPIO_NUM_36 |CN1.11 |Lock position feedback (input)
+|TYPE2_MANUAL_UNLOCK_PIN |GPIO_NUM_35 |CN1.5 |Manual unlock button (input)
+|BAT_PUMP_RELAY_PIN      |GPIO_NUM_37 |CN1.9 |Battery pump power relay / MOSFET
+|BAT_PUMP_PWM_PIN        |GPIO_NUM_38 |CN1.7 |Battery pump speed control (PWM)
+|INV_PUMP_RELAY_PIN      |GPIO_NUM_39 |CN1.6 |Inverter pump power relay / MOSFET
+|INV_PUMP_PWM_PIN        |GPIO_NUM_40 |CN1.12 |Inverter pump speed control (PWM)
+|PIEZO_RELAY_PIN         |GPIO_NUM_5  |CN1.16 |Buzzer (Fixed: Aligned name with relay_control)
+|FAN_RELAY_PIN           |GPIO_NUM_17 |CN1.22 |Cooling fan relay
+|WS2812_DATA_PIN         |GPIO_NUM_16 |CN.13 |Addressable RGB LED (status LED)
+|LED_CHECK_OIL_PIN       |GPIO_NUM_14 |CN1.14 |Instrument Cluster "Check Oil" LED (via relay)
+|LED_BATTERY_PIN         |GPIO_NUM_15 |CN1.15 |Instrument Cluster "Battery" LED (via relay)
+|RELAY_11_PIN            |GPIO_NUM_42 |CN1.8 |General Purpose Relay 11
+|RELAY_12_PIN            |GPIO_NUM_41 |CN1.10 |General Purpose Relay 12
+|RELAY_13_PIN            |GPIO_NUM_47 |CN1.19 |General Purpose Relay 13
+|RELAY_14_PIN            |GPIO_NUM_4 |CN1.21 |General Purpose Relay 14
+|INPUT_13_PIN            |GPIO_NUM_3 |CN1.26 |General Purpose Input 
 
 ## 🚦 Status Indicators (WS2812B)
     🟢 Solid Green: System Ready / Drive Mode.
